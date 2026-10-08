@@ -14,7 +14,7 @@ import kotlinx.coroutines.*
 
 /**
  * Keeps Ashutool alive. It does two jobs:
- * 1. Shows live CPU, RAM and battery stats in the notification.
+ * 1. Shows live stats in the notification, using the choices from the Notification page.
  * 2. Watches the foreground app and opens the PIN screen for locked apps.
  */
 class MonitorService : Service() {
@@ -49,13 +49,7 @@ class MonitorService : Service() {
     }
 
     private fun build(s: Snap): Notification {
-        val full = LockStore.statsInNotif(this)
-        val b = s.batt
-        val maxMhz = (s.cores.maxOfOrNull { it.khz } ?: 0) / 1000
-        val title = if (full) "CPU ${s.cpu.toInt()}%   ${s.cpuTemp.toInt()}\u00B0C   RAM ${s.ramPct.toInt()}%" else "Ashutool is running"
-        val body = if (full)
-            "Battery ${b.level}%   ${b.ma} mA   ${"%.1f".format(b.tempC)}\u00B0C\nCore max $maxMhz MHz   Governor ${s.gov}"
-        else "Tap to open"
+        val (title, body) = statsLines(this, s)
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
@@ -105,7 +99,7 @@ class MonitorService : Service() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
-        if (i.action == Intent.ACTION_BOOT_COMPLETED) {
+        if (i.action == Intent.ACTION_BOOT_COMPLETED && LockStore.bool(c, "boot", true)) {
             ContextCompat.startForegroundService(c, Intent(c, MonitorService::class.java))
         }
     }

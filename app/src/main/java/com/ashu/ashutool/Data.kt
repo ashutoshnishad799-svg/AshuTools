@@ -115,8 +115,10 @@ object LockStore {
 
     fun check(c: Context, pin: String) = sp(c).getString("pin", null) == hash(pin)
 
-    fun statsInNotif(c: Context) = sp(c).getBoolean("notif_stats", true)
-    fun setStatsInNotif(c: Context, v: Boolean) = sp(c).edit().putBoolean("notif_stats", v).apply()
+    fun bool(c: Context, k: String, d: Boolean) = sp(c).getBoolean(k, d)
+    fun setBool(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
+    fun int(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
+    fun setInt(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
 
     private fun hash(s: String): String =
         MessageDigest.getInstance("SHA-256").digest("ashutool$s".toByteArray()).joinToString("") { "%02x".format(it) }

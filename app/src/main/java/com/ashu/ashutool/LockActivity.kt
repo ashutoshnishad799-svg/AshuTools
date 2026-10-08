@@ -1,12 +1,15 @@
 package com.ashu.ashutool
 
 import android.content.Intent
+import android.graphics.Color as AColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,11 +33,14 @@ class LockActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AColor.TRANSPARENT)
+        )
         pkg = intent.getStringExtra("pkg") ?: run { finish(); return }
         setContent {
             AshuTheme {
-                PinScreen(pkg, onOk = { LockStore.unlocked = pkg; finish() })
+                Aurora { PinScreen(pkg, onOk = { LockStore.unlocked = pkg; finish() }) }
             }
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -75,18 +83,21 @@ fun PinScreen(pkg: String, onOk: () -> Unit) {
     }
 
     Column(
-        Modifier.fillMaxSize().background(Bg).systemBarsPadding().padding(24.dp),
+        Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        AppIcon(pkg, 68.dp)
+        AppIcon(pkg, 72.dp)
         Spacer(Modifier.height(16.dp))
         Text(name, color = TextHi, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text("Enter your PIN to continue", color = TextLo, fontSize = 14.sp)
         Spacer(Modifier.height(28.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             repeat(len) { i ->
-                Box(Modifier.size(13.dp).clip(CircleShape).background(if (i < pin.length) Accent else Line))
+                Box(
+                    Modifier.size(14.dp).clip(CircleShape)
+                        .then(if (i < pin.length) Modifier.background(GTeal.d()) else Modifier.background(Color.White.copy(alpha = 0.15f)))
+                )
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -96,7 +107,7 @@ fun PinScreen(pkg: String, onOk: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(vertical = 8.dp)) {
                 row.forEach { k ->
                     when (k) {
-                        "" -> Spacer(Modifier.size(72.dp))
+                        "" -> Spacer(Modifier.size(76.dp))
                         "<" -> KeyBox(onClick = { if (pin.isNotEmpty()) pin = pin.dropLast(1) }) {
                             Icon(Icons.AutoMirrored.Rounded.Backspace, "Delete", tint = TextHi)
                         }
@@ -113,7 +124,14 @@ fun PinScreen(pkg: String, onOk: () -> Unit) {
 @Composable
 private fun KeyBox(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
-        Modifier.size(72.dp).clip(CircleShape).background(Surf2).clickable(onClick = onClick),
+        Modifier.size(76.dp).clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.18f), Color.White.copy(alpha = 0.06f))))
+            .border(
+                1.dp,
+                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.40f), Color.White.copy(alpha = 0.05f))),
+                CircleShape
+            )
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { content() }
 }

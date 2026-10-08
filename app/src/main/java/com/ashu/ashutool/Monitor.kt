@@ -36,7 +36,10 @@ data class Snap(
     val batt: Batt = Batt(),
     val cpuHist: List<Float> = emptyList(),
     val tempHist: List<Float> = emptyList(),
-    val currHist: List<Float> = emptyList()
+    val currHist: List<Float> = emptyList(),
+    val ramHist: List<Float> = emptyList(),
+    val cpuTempHist: List<Float> = emptyList(),
+    val zones: List<Pair<String, Float>> = emptyList()
 )
 
 /** Samples CPU, RAM, thermal and battery data every 2 seconds. */
@@ -50,6 +53,8 @@ object Monitor {
     private val cpuH = ArrayList<Float>()
     private val tempH = ArrayList<Float>()
     private val currH = ArrayList<Float>()
+    private val ramH = ArrayList<Float>()
+    private val cTempH = ArrayList<Float>()
 
     fun start(ctx: Context) {
         if (job?.isActive == true) return
@@ -60,7 +65,7 @@ object Monitor {
                     _snap.value = sample(app, _snap.value)
                 } catch (_: Exception) {
                 }
-                delay(2000)
+                delay(LockStore.int(app, "n_interval", 2000).toLong())
             }
         }
     }
@@ -193,18 +198,25 @@ object Monitor {
             cycles = if (cycles > 0) cycles else -1
         )
 
+        val zoneList = zones.map { (n, t) -> n to (if (t > 1000) t / 1000f else t.toFloat()) }
+            .sortedByDescending { it.second }
+        val ramPct = if (totalMb > 0) usedMb * 100f / totalMb else 0f
+
         return Snap(
             cpu = cpu,
             cores = cores,
             gov = gov,
             cpuTemp = cpuTemp,
-            ramPct = if (totalMb > 0) usedMb * 100f / totalMb else 0f,
+            ramPct = ramPct,
             ramUsedMb = usedMb,
             ramTotalMb = totalMb,
             batt = batt,
             cpuHist = push(cpuH, cpu),
             tempHist = push(tempH, batt.tempC),
-            currHist = push(currH, ma.toFloat())
+            currHist = push(currH, ma.toFloat()),
+            ramHist = push(ramH, ramPct),
+            cpuTempHist = push(cTempH, cpuTemp),
+            zones = zoneList
         )
     }
 }
