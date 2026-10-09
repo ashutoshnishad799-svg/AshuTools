@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Environment
+import android.os.StatFs
+import android.os.SystemClock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +42,15 @@ data class Snap(
     val currHist: List<Float> = emptyList(),
     val ramHist: List<Float> = emptyList(),
     val cpuTempHist: List<Float> = emptyList(),
-    val zones: List<Pair<String, Float>> = emptyList()
+    val zones: List<Pair<String, Float>> = emptyList(),
+    val ratePh: Float? = null,
+    val drain24: Float = 0f,
+    val avg24: Float = 0f,
+    val netDown: Long = 0,
+    val netUp: Long = 0,
+    val deepSleep: Int = 0,
+    val freeGb: Float = 0f,
+    val uptimeSec: Long = 0
 )
 
 /** Samples CPU, RAM, thermal and battery data every 2 seconds. */
@@ -55,6 +66,9 @@ object Monitor {
     private val currH = ArrayList<Float>()
     private val ramH = ArrayList<Float>()
     private val cTempH = ArrayList<Float>()
+    private var prevRx = 0L
+    private var prevTx = 0L
+    private var prevT = 0L
 
     fun start(ctx: Context) {
         if (job?.isActive == true) return
@@ -95,12 +109,18 @@ object Monitor {
             "grep -H . /sys/devices/system/cpu/online /sys/devices/system/cpu/present",
             "grep -H . /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
             "grep -H . /sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp",
-            "grep -H . /sys/class/power_supply/battery/charge_full /sys/class/power_supply/battery/charge_full_design /sys/class/power_supply/battery/cycle_count"
+            "grep -H . /sys/class/power_supply/battery/charge_full /sys/class/power_supply/battery/charge_full_design /sys/class/power_supply/battery/cycle_count",
+            "sed 's/^/NET /' /proc/net/dev",
+            "cut -d. -f1 /proc/uptime"
         )
         var statLine = ""
+        val netLines = ArrayList<String>()
+        var uptime = 0L
         val kv = HashMap<String, String>()
         for (l in lines) {
             if (l.startsWith("cpu ")) statLine = l
+            else if (l.startsWith("NET ")) netLines.add(l)
+            else if (l.isNotEmpty() && l.all { it.isDigit() }) uptime = l.toLongOrNull() ?: uptime
             else {
                 val i = l.indexOf(':')
                 if (i > 0) kv[l.substring(0, i)] = l.substring(i + 1).trim()
@@ -202,6 +222,37 @@ object Monitor {
             .sortedByDescending { it.second }
         val ramPct = if (totalMb > 0) usedMb * 100f / totalMb else 0f
 
+        // network speed from interface counters
+        var rx = 0L
+        var tx = 0L
+        for (l in netLines) {
+            val body = l.removePrefix("NET ").trim()
+            val i = body.indexOf(':')
+            if (i <= 0 || body.substring(0, i) == "lo") continue
+            val f = body.substring(i + 1).trim().split(Regex("\\s+"))
+            rx += f.getOrNull(0)?.toLongOrNull() ?: 0L
+            tx += f.getOrNull(8)?.toLongOrNull() ?: 0L
+        }
+        val nowT = System.currentTimeMillis()
+        var down = old.netDown
+        var up = old.netUp
+        if (prevT != 0L && nowT > prevT && rx >= prevRx && tx >= prevTx) {
+            val dt = (nowT - prevT) / 1000f
+            down = ((rx - prevRx) / dt).toLong()
+            up = ((tx - prevTx) / dt).toLong()
+        }
+        prevRx = rx; prevTx = tx; prevT = nowT
+
+        // drain rate, 24 hour history and per-app heat
+        BatteryLog.init(ctx)
+        BatteryLog.add(batt.level, batt.charging)
+        val fullMah = full / 1000f
+        val fallback = if (fullMah > 0f && ma > 0) (ma / fullMah * 100f) * (if (batt.charging) 1f else -1f) else null
+        AppThermal.record(ctx, cpuTemp, batt.tempC, cpu, LockStore.int(ctx, "n_interval", 2000) / 1000f)
+        val awake = SystemClock.uptimeMillis().toFloat()
+        val total = SystemClock.elapsedRealtime().toFloat().coerceAtLeast(1f)
+        val free = try { StatFs(Environment.getDataDirectory().path).availableBytes / 1073741824f } catch (e: Exception) { 0f }
+
         return Snap(
             cpu = cpu,
             cores = cores,
@@ -216,7 +267,15 @@ object Monitor {
             currHist = push(currH, ma.toFloat()),
             ramHist = push(ramH, ramPct),
             cpuTempHist = push(cTempH, cpuTemp),
-            zones = zoneList
+            zones = zoneList,
+            ratePh = BatteryLog.rate() ?: fallback,
+            drain24 = BatteryLog.drain24(),
+            avg24 = BatteryLog.avg24(),
+            netDown = down,
+            netUp = up,
+            deepSleep = ((1f - awake / total) * 100f).toInt().coerceIn(0, 100),
+            freeGb = free,
+            uptimeSec = if (uptime > 0) uptime else old.uptimeSec
         )
     }
 }

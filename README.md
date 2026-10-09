@@ -1,35 +1,46 @@
 # Ashutool
 
 Root toolkit for custom ROMs. Kotlin, Jetpack Compose, libsu.
-Aurora gradient background, glass cards, Material vector icons. No emoji.
+Glass UI with 12 themes and a bottom bar you swipe left and right. Line icons only, no emoji.
 
 ## Build
-1. Open this folder in Android Studio (Koala or newer, JDK 17).
-2. Let Gradle sync. JitPack is already set up for libsu.
-3. Run on a rooted device and allow the root prompt.
+1. Open this folder in Android Studio (Koala or newer, JDK 17). Let Gradle sync.
+2. Run on a rooted device and allow the root prompt.
+3. On first launch Ashutool grants itself usage access, overlay, notifications, battery whitelist
+   and turns on the instant-lock accessibility service through root.
 
-On first launch with root, Ashutool grants itself usage access, overlay,
-notification and battery whitelist permissions.
+## Tabs (bottom bar, swipe to scroll)
+Home, Games, CPU, Memory, Battery, Charging, Thermal, App heat, Usage, Apps, Lock, Hide,
+Network, Tasks, Alerts, Display, Storage, Power, Device, Settings.
 
-## Pages
-- CPU: load, per-core frequency, and per-cluster governor, min and max frequency.
-- Memory: RAM, swap, cache, swappiness slider, drop caches.
-- Battery: level, current, power in watts, voltage, health, capacity health, cycles, charts.
-- Thermal: CPU and battery temperature, every thermal sensor.
-- App usage: screen time per app for today, 7 and 30 days.
-- App manager: open, force stop, clear cache, clear data, uninstall for user.
-- App lock: PIN lock per app, change PIN.
-- App hide: hide apps from the launcher, unhide all.
-- Processes: top memory users with kill.
-- Notification: choose what the live notification shows and how often it updates.
-- Display: density presets, animation speed, show touches, stay awake.
-- Storage: partition usage, clear caches, run TRIM.
-- Power: battery saver, Doze, restart System UI, soft reboot, reboot, recovery, bootloader, power off.
-- Device: model, ROM build, kernel, patch level, uptime, SELinux switch.
-- Home: one-tap boost (stops background apps, trims caches, frees RAM).
+- Home: live gauges and one-tap boost.
+- Games: game launcher, edge sidebar (stats, performance, DND, screenshot, record, brightness, volume), auto game mode.
+- CPU: per-cluster governor and min/max frequency, restore defaults.
+- Memory: RAM, swap on/off, swappiness slider and explanation, drop caches.
+- Battery: drain rate per hour, 24 hour usage and average, level chart, use by app, health, cycles.
+- Charging: charge limit, pause charging, temperature guard, charging current (kernel dependent).
+- Thermal: every sensor. App heat: apps using the CPU now and temperature history per app.
+- Usage: screen time per app.
+- Apps: stop, clear cache, clear data, remove for user and restore.
+- Lock: PIN or pattern, instant overlay with background blur, relock delay, network default for locked apps.
+- Hide: freeze or hide completely, vault opened by a dialer code (*#*#code#*#*) or volume up, up, down, optional password.
+- Network: block mobile data or Wi-Fi per app.
+- Alerts: choose what the live notification shows (CPU, RAM, battery, drain, network speed, sleep, storage).
+- Settings: themes, permissions, safe mode, firewall reset, action log.
+
+## Safety
+- Launcher, keyboard, dialer, SMS app, system-UID apps, GMS, Play Store and root managers cannot be hidden,
+  frozen, removed, cleared, blocked or locked.
+- Package names are validated before any shell command. Governors and frequencies come only from kernel lists.
+  Charging and current writes use a fixed path whitelist.
+- Charging is switched back on when unplugged, when the service stops, and after a crash.
+- Game mode saves what it changes and restores it, also after a crash.
+- Density changes revert by themselves after 15 seconds unless confirmed.
+- Removed apps stay restorable. Firewall rules live in one chain that Settings can flush.
+- Five service restarts in two minutes switch on safe mode and pause the risky auto features.
+- Nothing is ever remounted or written under /system. Every root change is listed in Settings, Action log.
 
 ## Notes
-- Hide uses `pm disable-user --user 0`. Unhide restores it.
-- App lock watches foreground app events and opens a PIN screen over locked apps.
-- Critical packages (android, SystemUI, Settings, Phone) are protected from hide, stop, clear and uninstall.
-- To ship inside a ROM, place the APK in `system/priv-app/Ashutool/`.
+- If you forget the lock PIN, clear Ashutool's app data with root.
+- Android takes the recents preview itself, so an app cannot blur it. The lock covers the app the moment it opens instead.
+- To ship in a ROM, put the APK in `system/priv-app/Ashutool/`.

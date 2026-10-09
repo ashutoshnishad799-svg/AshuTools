@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Ashutool</string>
+    <string name="games_name">Ashu Games</string>
+    <string name="a11y_desc">Lets Ashutool cover locked apps the moment they open, tell game mode which app is in front, and listen for the vault volume keys. It never reads screen content.</string>
 </resources>
