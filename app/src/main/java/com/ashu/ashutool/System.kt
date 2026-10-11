@@ -3,7 +3,15 @@ package com.ashu.ashutool
 import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.media.AudioManager
+import android.os.Build
 import android.os.StatFs
+import android.os.SystemClock
+import android.telecom.TelecomManager
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -156,13 +164,30 @@ object Sys {
     }
 
     // ---- Processes
-    fun procs(): List<Proc> = Root.run("ps -A -o PID,USER,RSS,NAME").drop(1).mapNotNull { l ->
+    fun procs(limit: Int = 40): List<Proc> = Root.run("ps -A -o PID,USER,RSS,NAME").drop(1).mapNotNull { l ->
         val p = l.trim().split(Regex("\\s+"), 4)
         if (p.size < 4) return@mapNotNull null
         val pid = p[0].toIntOrNull() ?: return@mapNotNull null
         val mb = ((p[2].toLongOrNull() ?: 0L) / 1024).toInt()
         if (mb <= 0) null else Proc(pid, p[1], mb, p[3].substringAfterLast('/'))
-    }.sortedByDescending { it.rssMb }.take(40)
+    }.sortedByDescending { it.rssMb }.take(limit)
+
+    /** Downloaded apps that are running now. Preinstalled and protected apps are never listed. */
+    fun runningApps(ctx: Context): List<Triple<String, String, Int>> {
+        val pm = ctx.packageManager
+        val by = LinkedHashMap<String, Int>()
+        for (p in procs(300)) if (p.killable) {
+            val pkg = p.name.substringBefore(':')
+            if (Safety.validPkg(pkg)) by[pkg] = (by[pkg] ?: 0) + p.rssMb
+        }
+        return by.entries.mapNotNull { (pkg, mb) ->
+            try {
+                val ai = pm.getApplicationInfo(pkg, 0)
+                if ((ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0 || Safety.isProtected(ctx, pkg, ai.uid)) null
+                else Triple(pkg, pm.getApplicationLabel(ai).toString(), mb)
+            } catch (e: Exception) { null }
+        }.sortedByDescending { it.third }
+    }
 
     fun kill(p: Proc): Boolean = p.killable && p.pid > 1000 && Root.ok("kill -9 ${p.pid}")
 
@@ -451,7 +476,7 @@ object GameMode {
         val pm = ctx.packageManager
         val auto = try {
             pm.getInstalledApplications(0)
-                .filter { it.category == ApplicationInfo.CATEGORY_GAME && (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+                .filter { (it.category == ApplicationInfo.CATEGORY_GAME || (it.flags and ApplicationInfo.FLAG_IS_GAME) != 0) && (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
                 .map { it.packageName }.toSet()
         } catch (e: Exception) { emptySet() }
         val set = (auto + LockStore.set(ctx, "g_added") - LockStore.set(ctx, "g_removed"))
@@ -566,4 +591,228 @@ fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
     val body = if (Guard.safe) "Auto features are paused. Open Settings to resume."
     else if (on && rows.isNotEmpty()) rows.joinToString("\n") else "Tap to open"
     return title to body
+}
+
+
+// =================================================================== Recorder
+
+/** Screen recording through screenrecord. Long recordings are saved in parts under three minutes. */
+object Recorder {
+    var running by mutableStateOf(false)
+    @Volatile var startedAt = 0L
+    private const val FLAG = "/data/local/tmp/.ashu_rec"
+    private const val DIR = "/sdcard/Movies/Ashutool"
+
+    fun start(): Boolean {
+        if (running) return true
+        val ts = System.currentTimeMillis()
+        val ok = Root.ok(
+            "mkdir -p $DIR", "touch $FLAG",
+            "nohup sh -c 'n=1; while [ -e $FLAG ]; do screenrecord --time-limit 170 $DIR/ashu_${ts}_\$n.mp4; n=\$((n+1)); done' >/dev/null 2>&1 &"
+        )
+        if (ok) { startedAt = SystemClock.elapsedRealtime(); running = true }
+        return ok
+    }
+
+    fun stop(): Boolean {
+        Root.ok("rm -f $FLAG", "pkill -2 screenrecord")
+        running = false
+        return true
+    }
+
+    /** Pick up a recording that kept running after the app was killed. */
+    fun sync() {
+        running = Root.run("[ -e $FLAG ] && echo y").firstOrNull()?.trim() == "y"
+        if (running && startedAt == 0L) startedAt = SystemClock.elapsedRealtime()
+    }
+}
+
+// ============================================================ Background control
+
+/** Per-app background rules. Flags: 1 restrict background, 2 stop when I leave, 4 stop when screen turns off, 8 never stop. */
+object BgControl {
+    fun flags(ctx: Context): Map<String, Int> = LockStore.pairsOf(ctx, "bg_flags")
+
+    fun setFlags(ctx: Context, pkg: String, f: Int): Boolean {
+        if (Safety.isProtected(ctx, pkg)) return false
+        val old = flags(ctx)[pkg] ?: 0
+        if ((f and 1) != (old and 1)) {
+            if ((f and 1) != 0) Root.ok("cmd appops set $pkg RUN_ANY_IN_BACKGROUND ignore", "am set-standby-bucket $pkg restricted")
+            else Root.ok("cmd appops set $pkg RUN_ANY_IN_BACKGROUND allow", "am set-standby-bucket $pkg active")
+        }
+        LockStore.putPair(ctx, "bg_flags", pkg, if (f == 0) -1 else f)
+        return true
+    }
+
+    fun thirdParty(ctx: Context): List<String> = Root.run("pm list packages -3")
+        .map { it.trim().removePrefix("package:") }
+        .filter { Safety.validPkg(it) && !Safety.isProtected(ctx, it) }
+
+    /** Called when the screen turns off. */
+    fun screenOff(ctx: Context): Int {
+        val fl = flags(ctx)
+        val all = LockStore.bool(ctx, "bg_all_off", false)
+        val list = if (all) thirdParty(ctx).filter { ((fl[it] ?: 0) and 8) == 0 }
+        else fl.filter { (it.value and 4) != 0 }.keys.filter { Safety.validPkg(it) && !Safety.isProtected(ctx, it) }
+        if (list.isNotEmpty()) Root.ok(*list.map { "am force-stop $it" }.toTypedArray())
+        return list.size
+    }
+}
+
+// ================================================================ Floating windows
+
+object Windows {
+    fun enableFreeform(): Boolean = Root.ok(
+        "settings put global enable_freeform_support 1",
+        "settings put global force_resizable_activities 1",
+        "settings put global enable_non_resizable_multi_window 1"
+    )
+
+    /** Opens an app in a floating window when the ROM supports freeform, otherwise normally. */
+    fun open(ctx: Context, pkg: String, floating: Boolean): Boolean {
+        if (!Safety.validPkg(pkg)) return false
+        val comp = ctx.packageManager.getLaunchIntentForPackage(pkg)?.component ?: return false
+        val c = Root.q(comp.flattenToShortString())
+        if (floating && Root.ok("am start --windowingMode 5 -n $c")) return true
+        return Root.ok("am start -n $c")
+    }
+}
+
+// ======================================================================== Calls
+
+object Calls {
+    var state by mutableIntStateOf(TelephonyManager.CALL_STATE_IDLE)
+    var speaker by mutableStateOf(false)
+    var muted by mutableStateOf(false)
+    @Volatile var changedAt = 0L
+    @Volatile var startedAt = 0L
+    @Volatile var speakerForced = false
+
+    fun answer(ctx: Context): Boolean = try {
+        ctx.getSystemService(TelecomManager::class.java).acceptRingingCall()
+        true
+    } catch (e: Exception) { Root.ok("input keyevent 5") }
+
+    fun end(ctx: Context): Boolean = try {
+        ctx.getSystemService(TelecomManager::class.java).endCall()
+    } catch (e: Exception) { Root.ok("input keyevent 6") }
+
+    @Suppress("DEPRECATION")
+    fun setSpeaker(ctx: Context, on: Boolean) {
+        ctx.getSystemService(AudioManager::class.java).isSpeakerphoneOn = on
+        speaker = on
+        speakerForced = on
+    }
+
+    fun setMute(ctx: Context, on: Boolean) {
+        ctx.getSystemService(AudioManager::class.java).isMicrophoneMute = on
+        muted = on
+    }
+
+    /** True while a call is ringing, or within three seconds of it being answered. */
+    fun recentActive(): Boolean =
+        state == TelephonyManager.CALL_STATE_RINGING ||
+            (state == TelephonyManager.CALL_STATE_OFFHOOK && SystemClock.elapsedRealtime() - changedAt < 3000)
+}
+
+/** Listens for call state changes. Needs the phone state permission, which Ashutool grants itself through root. */
+class CallWatcher(private val ctx: Context, private val onState: (Int) -> Unit) {
+    private var token: Any? = null
+
+    val registered: Boolean get() = token != null
+
+    @Suppress("DEPRECATION")
+    fun start(): Boolean {
+        if (token != null) return true
+        return try {
+            val tm = ctx.getSystemService(TelephonyManager::class.java)
+            if (Build.VERSION.SDK_INT >= 31) {
+                val cb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+                    override fun onCallStateChanged(state: Int) { onState(state) }
+                }
+                tm.registerTelephonyCallback(ctx.mainExecutor, cb)
+                token = cb
+            } else {
+                val l = object : PhoneStateListener() {
+                    override fun onCallStateChanged(state: Int, phoneNumber: String?) { onState(state) }
+                }
+                tm.listen(l, PhoneStateListener.LISTEN_CALL_STATE)
+                token = l
+            }
+            true
+        } catch (e: Exception) { false }
+    }
+
+    @Suppress("DEPRECATION")
+    fun stop() {
+        try {
+            val tm = ctx.getSystemService(TelephonyManager::class.java)
+            val t = token
+            if (Build.VERSION.SDK_INT >= 31 && t is TelephonyCallback) tm.unregisterTelephonyCallback(t)
+            else if (t is PhoneStateListener) tm.listen(t, PhoneStateListener.LISTEN_NONE)
+        } catch (_: Exception) {}
+        token = null
+    }
+}
+
+// =============================================================== Battery saving
+
+/** Optional battery savers. Everything they change is saved first and restored when the screen turns on. */
+object Saver {
+    @Volatile var dozed = false
+    @Volatile var saverOn = false
+
+    fun screenOff(ctx: Context) {
+        if (LockStore.bool(ctx, "bs_cpu", false)) capCpu(ctx)
+    }
+
+    fun screenOn(ctx: Context) {
+        if (dozed) { Root.ok("dumpsys deviceidle unforce"); dozed = false }
+        restoreCpu(ctx)
+    }
+
+    fun doze() {
+        if (Root.ok("dumpsys deviceidle force-idle")) dozed = true
+    }
+
+    private fun capCpu(ctx: Context) {
+        val pols = Sys.policies()
+        if (pols.isEmpty()) return
+        if (LockStore.str(ctx, "bs_prev", "").isEmpty()) {
+            LockStore.setStr(ctx, "bs_prev", pols.joinToString(";") { "${it.id}:${it.gov}:${it.minF}:${it.maxF}" })
+        }
+        pols.forEach { p ->
+            if ("powersave" in p.govs) Sys.setGov(p, "powersave")
+            val mid = p.freqs.getOrNull(p.freqs.size / 2)
+            if (mid != null) Sys.setRange(p, p.freqs.first(), mid)
+        }
+    }
+
+    fun restoreCpu(ctx: Context) {
+        val saved = LockStore.str(ctx, "bs_prev", "")
+        if (saved.isEmpty()) return
+        val pols = Sys.policies().associateBy { it.id }
+        for (e in saved.split(";")) {
+            val p = e.split(":")
+            if (p.size != 4) continue
+            val pol = pols[p[0].toIntOrNull() ?: continue] ?: continue
+            val mn = p[2].toIntOrNull() ?: continue
+            val mx = p[3].toIntOrNull() ?: continue
+            Sys.setGov(pol, p[1])
+            Sys.setRange(pol, mn, mx)
+        }
+        LockStore.setStr(ctx, "bs_prev", "")
+    }
+
+    /** Turns battery saver on at a chosen level and off again after charging. */
+    fun auto(ctx: Context, s: Snap) {
+        if (!LockStore.bool(ctx, "bs_auto", false)) return
+        val th = LockStore.int(ctx, "bs_th", 20).coerceIn(5, 60)
+        if (s.batt.level <= th && !s.batt.charging && !saverOn) {
+            saverOn = Root.ok("settings put global low_power 1")
+        } else if (saverOn && (s.batt.charging || s.batt.level >= th + 5)) {
+            Root.ok("settings put global low_power 0")
+            saverOn = false
+        }
+    }
 }

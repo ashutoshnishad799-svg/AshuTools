@@ -18,55 +18,56 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.*
 import kotlin.math.abs
 
-// ---------------------------------------------------------------- Processes
+// ---------------------------------------------------------------- Tasks
 
 @Composable
 fun ProcessesPage() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var list by remember { mutableStateOf<List<Proc>?>(null) }
-    var kill by remember { mutableStateOf<Proc?>(null) }
-    LaunchedEffect(Unit) {
+    var list by remember { mutableStateOf<List<Triple<String, String, Int>>?>(null) }
+    var stop by remember { mutableStateOf<Triple<String, String, Int>?>(null) }
+    WhileVisible {
         while (true) {
-            list = withContext(Dispatchers.IO) { Sys.procs() }
-            delay(3000)
+            list = withContext(Dispatchers.IO) { Sys.runningApps(ctx) }
+            delay(4000)
         }
     }
-
-    Page("Processes", "Top memory users, live", GPink, Icons.Outlined.Terminal) {
+    Page("Tasks", "Downloaded apps running now", GPink, Icons.Outlined.Terminal) {
+        item { Glass { Hint("Only apps you installed are listed. System apps, the launcher, keyboard and dialer are hidden on purpose, so nothing important can be closed by mistake.") } }
         val l = list
-        if (l == null) item { Hint("Reading processes") }
+        if (l == null) item { Hint("Reading running apps") }
+        else if (l.isEmpty()) item { Hint("No downloaded app is running in the background.") }
         else {
-            item { Hint("Tap an app process to stop it. System and root processes are read-only.") }
-            val top = (l.firstOrNull()?.rssMb ?: 1).coerceAtLeast(1)
-            items(l, key = { it.pid }) { p ->
-                Glass(Modifier.animateItem(), radius = 18.dp, pad = 12.dp, onClick = if (p.killable) ({ kill = p }) else null) {
+            val top = l.first().third.coerceAtLeast(1)
+            items(l, key = { it.first }) { t ->
+                Glass(Modifier.animateItem(), radius = 18.dp, pad = 12.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppIcon(t.first, 38.dp)
+                        Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(p.name, color = TextHi, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("PID ${p.pid}   ${p.user}", color = TextLo, fontSize = 11.sp)
+                            Row {
+                                Text(t.second, color = TextHi, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text("${t.third} MB", color = TextLo, fontSize = 13.sp)
+                            }
+                            Spacer(Modifier.height(7.dp))
+                            Bar(t.third.toFloat() / top, GPink)
                         }
-                        if (!p.killable) {
-                            Icon(Icons.Outlined.Shield, "Protected", tint = TextLo, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("${p.rssMb} MB", color = TextLo, fontSize = 13.sp)
+                        Spacer(Modifier.width(10.dp))
+                        GlassButton(Icons.Outlined.Stop, "Stop", Warn) { stop = t }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Bar(p.rssMb.toFloat() / top, GPink)
                 }
             }
         }
     }
-
-    kill?.let { p ->
-        ConfirmDialog("Stop process", "Stop ${p.name} (PID ${p.pid})?", "Stop", true, onConfirm = {
-            kill = null
+    stop?.let { t ->
+        ConfirmDialog("Stop app", "Stop ${t.second}? It may lose unsaved data.", "Stop", true, onConfirm = {
+            stop = null
             scope.launch {
-                val r = withContext(Dispatchers.IO) { Sys.kill(p) }
-                toast(ctx, if (r) "${p.name} stopped" else "Could not stop process")
+                val r = withContext(Dispatchers.IO) { Apps.forceStop(ctx, t.first) }
+                toast(ctx, if (r) "${t.second} stopped" else "Could not stop app")
+                list = withContext(Dispatchers.IO) { Sys.runningApps(ctx) }
             }
-        }, onDismiss = { kill = null })
+        }, onDismiss = { stop = null })
     }
 }
 

@@ -70,6 +70,8 @@ object Root {
             "appops set $pkg GET_USAGE_STATS allow",
             "appops set $pkg SYSTEM_ALERT_WINDOW allow",
             "pm grant $pkg android.permission.POST_NOTIFICATIONS",
+            "pm grant $pkg android.permission.READ_PHONE_STATE",
+            "pm grant $pkg android.permission.ANSWER_PHONE_CALLS",
             "dumpsys deviceidle whitelist +$pkg"
         )
         if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)

@@ -29,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -106,10 +107,21 @@ fun Glass(
 ) {
     val shape = RoundedCornerShape(radius)
     val pal = Palette.cur
+    val k = Palette.glass
     val base = if (onClick != null) modifier.bounceClick(onClick = onClick) else modifier
     Column(
         base.fillMaxWidth().clip(shape)
-            .background(Brush.verticalGradient(listOf(pal.tint.copy(alpha = pal.glassTop), pal.tint.copy(alpha = pal.glassBottom))))
+            .background(Brush.verticalGradient(listOf(pal.tint.copy(alpha = (pal.glassTop * k).coerceAtMost(0.45f)), pal.tint.copy(alpha = (pal.glassBottom * k).coerceAtMost(0.30f)))))
+            .then(
+                if (pal.shine) Modifier.drawBehind {
+                    drawRect(
+                        Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = if (pal.dark) 0.15f else 0.40f), Color.Transparent),
+                            start = Offset.Zero, end = Offset(size.width * 0.75f, size.height * 0.75f)
+                        )
+                    )
+                } else Modifier
+            )
             .border(
                 1.dp,
                 Brush.linearGradient(listOf(pal.tint.copy(alpha = pal.bA), pal.tint.copy(alpha = pal.bB), pal.tint.copy(alpha = pal.bC))),
@@ -153,6 +165,7 @@ fun GradText(text: String, grad: Grad, size: TextUnit, weight: FontWeight = Font
 fun Page(
     title: String, sub: String, grad: Grad, icon: ImageVector,
     onBack: (() -> Unit)? = null, bottomInset: Boolean = false,
+    action: (@Composable () -> Unit)? = null,
     content: LazyListScope.() -> Unit
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding().then(if (bottomInset) Modifier.navigationBarsPadding() else Modifier)) {
@@ -170,6 +183,10 @@ fun Page(
             Column(Modifier.weight(1f)) {
                 Text(title, color = TextHi, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text(sub, color = TextLo, fontSize = 12.sp)
+            }
+            if (action != null) {
+                action()
+                Spacer(Modifier.width(10.dp))
             }
             GradIcon(icon, grad, 44.dp)
         }
@@ -421,10 +438,10 @@ fun SearchField(query: String, onChange: (String) -> Unit) {
 }
 
 @Composable
-fun PinField(value: String, label: String, onChange: (String) -> Unit) {
+fun PinField(value: String, label: String, max: Int = 6, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
-        onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) onChange(it) },
+        onValueChange = { if (it.length <= max && it.all(Char::isDigit)) onChange(it) },
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -539,7 +556,7 @@ private fun VerifyInline(onOk: () -> Unit) {
     }
 }
 
-/** Set or change the app lock credential. Supports PIN and pattern. */
+/** Set or change the app lock credential. Supports PIN and pattern, then shows a one-time recovery code. */
 @Composable
 fun CredentialDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
     val ctx = LocalContext.current
@@ -548,6 +565,23 @@ fun CredentialDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var first by remember { mutableStateOf<List<Int>?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
+    var recovery by remember { mutableStateOf<String?>(null) }
+    val code = recovery
+    if (code != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            containerColor = DialogBg, titleContentColor = TextHi, textContentColor = TextLo,
+            title = { Text("Save your recovery code") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(code.chunked(4).joinToString("  "), color = Accent, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    Text("If you forget your lock, tap Forgot on the lock screen and enter this code to reset it. It is shown only once, so write it down.", fontSize = 13.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = onSaved) { Text("I saved it", color = Accent) } }
+        )
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = DialogBg, titleContentColor = TextHi, textContentColor = TextLo,
@@ -571,7 +605,7 @@ fun CredentialDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
                             when {
                                 p.size < 4 -> err = "Connect at least 4 dots"
                                 first == null -> { first = p; err = null }
-                                first == p -> { LockStore.setPattern(ctx, p); onSaved() }
+                                first == p -> { LockStore.setPattern(ctx, p); recovery = LockStore.makeRecovery(ctx) }
                                 else -> { err = "Patterns do not match"; first = null }
                             }
                         }
@@ -583,7 +617,7 @@ fun CredentialDialog(onDismiss: () -> Unit, onSaved: () -> Unit) {
         confirmButton = {
             if (verified && type == 0) TextButton(
                 enabled = pin.length >= 4,
-                onClick = { LockStore.setPin(ctx, pin); onSaved() }
+                onClick = { LockStore.setPin(ctx, pin); recovery = LockStore.makeRecovery(ctx) }
             ) { Text("Save PIN", color = Accent) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextLo) } }

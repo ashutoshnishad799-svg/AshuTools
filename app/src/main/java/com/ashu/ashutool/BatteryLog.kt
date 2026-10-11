@@ -30,6 +30,12 @@ object BatteryLog {
     }
 
     @Synchronized
+    fun reset() {
+        pts.clear()
+        try { file?.writeText("") } catch (_: Exception) {}
+    }
+
+    @Synchronized
     fun add(level: Int, chg: Boolean) {
         val now = System.currentTimeMillis()
         val last = pts.lastOrNull()

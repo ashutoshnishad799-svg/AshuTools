@@ -26,6 +26,16 @@ data class UsageItem(val pkg: String, val name: String, val ms: Long)
 /** Foreground package. Written by the accessibility service, or by usage polling as a fallback. */
 object Fg {
     @Volatile var pkg: String? = null
+    @Volatile var prev: String? = null
+    @Volatile var listener: ((String) -> Unit)? = null
+
+    /** Records a new foreground app and tells the listener, only when it actually changed. */
+    fun set(p: String) {
+        if (p == pkg) return
+        prev = pkg
+        pkg = p
+        listener?.invoke(p)
+    }
 }
 
 /** Set when the service restarted several times in a row. Risky auto features pause until the user resumes. */
@@ -160,6 +170,19 @@ object Usage {
             .sortedByDescending { it.ms }
     }
 
+    /** Foreground time today for every app, in milliseconds. */
+    fun todayAll(ctx: Context): Map<String, Long> {
+        val usm = ctx.getSystemService(UsageStatsManager::class.java)
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        return usm.queryAndAggregateUsageStats(cal.timeInMillis, System.currentTimeMillis())
+            .mapValues { it.value.totalTimeInForeground }
+    }
+
+    fun todayMs(ctx: Context, pkg: String): Long = todayAll(ctx)[pkg] ?: 0L
+
     /** Last app that came to the foreground in the past 15 seconds, or null if nothing changed. */
     @Suppress("DEPRECATION")
     fun foreground(ctx: Context): String? {
@@ -230,6 +253,23 @@ object LockStore {
         sp(c).edit().putString("pat", hash(c, "p" + p.joinToString(""))).putInt("lock_type", 1).apply()
     }
 
+    fun hasRecovery(c: Context) = sp(c).contains("rec")
+
+    /** Eight digit recovery code. Only its hash is stored, so it can be shown once. */
+    fun makeRecovery(c: Context): String {
+        val r = SecureRandom()
+        val code = (0 until 8).joinToString("") { r.nextInt(10).toString() }
+        sp(c).edit().putString("rec", hash(c, "r$code")).apply()
+        return code
+    }
+
+    fun checkRecovery(c: Context, code: String) = sp(c).getString("rec", null) == hash(c, "r$code")
+
+    /** Removes the PIN or pattern. Locked apps stay in the list until a new lock is set. */
+    fun clearCred(c: Context) {
+        sp(c).edit().remove("pin").remove("pat").remove("rec").apply()
+    }
+
     fun checkPin(c: Context, pin: String) = sp(c).getString("pin", null) == hash(c, pin)
     fun checkPattern(c: Context, p: List<Int>) = sp(c).getString("pat", null) == hash(c, "p" + p.joinToString(""))
 
@@ -245,6 +285,9 @@ object LockStore {
         setSet(c, k, s)
     }
 
+    fun pairsOf(c: Context, k: String) = pairs(c, k)
+    fun putPair(c: Context, k: String, pkg: String, v: Int) = setPair(c, k, pkg, v)
+
     /** 0 freeze, 1 full hide */
     fun hideModes(c: Context) = pairs(c, "hide_modes")
     fun setHideMode(c: Context, pkg: String, mode: Int) = setPair(c, "hide_modes", pkg, mode)
@@ -252,4 +295,57 @@ object LockStore {
     /** 1 no mobile data, 2 no Wi-Fi, 3 no network. Missing means allowed. */
     fun netModes(c: Context) = pairs(c, "net_modes")
     fun setNetMode(c: Context, pkg: String, mode: Int) = setPair(c, "net_modes", pkg, if (mode == 0) -1 else mode)
+}
+
+/** Daily time limits per app, with a bonus that lasts until midnight. */
+object Limits {
+    fun all(c: Context): Map<String, Int> = LockStore.pairsOf(c, "limits")
+
+    fun set(c: Context, pkg: String, minutes: Int) =
+        LockStore.putPair(c, "limits", pkg, if (minutes <= 0) -1 else minutes.coerceAtMost(24 * 60))
+
+    private fun day(): String = Calendar.getInstance().let { "${it.get(Calendar.YEAR)}-${it.get(Calendar.DAY_OF_YEAR)}" }
+
+    fun bonus(c: Context, pkg: String): Int {
+        if (LockStore.str(c, "lb_day", "") != day()) {
+            LockStore.setStr(c, "lb_day", day())
+            LockStore.setSet(c, "lb", emptySet())
+        }
+        return LockStore.pairsOf(c, "lb")[pkg] ?: 0
+    }
+
+    fun addBonus(c: Context, pkg: String, minutes: Int) = LockStore.putPair(c, "lb", pkg, bonus(c, pkg) + minutes)
+
+    fun limitMs(c: Context, pkg: String): Long? = all(c)[pkg]?.let { (it + bonus(c, pkg)) * 60_000L }
+
+    fun exceeded(c: Context, pkg: String, usedMs: Long): Boolean = limitMs(c, pkg)?.let { usedMs >= it } ?: false
+}
+
+/** Time spent in blocked short-video screens today, used by the reels limit. */
+object ReelStats {
+    private var acc = 0f
+    private var lastSave = 0L
+
+    private fun day(): String = Calendar.getInstance().let { "${it.get(Calendar.YEAR)}-${it.get(Calendar.DAY_OF_YEAR)}" }
+
+    fun used(c: Context): Int {
+        if (LockStore.str(c, "reel_day", "") != day()) {
+            LockStore.setStr(c, "reel_day", day())
+            LockStore.setInt(c, "reel_sec", 0)
+            acc = 0f
+        }
+        return LockStore.int(c, "reel_sec", 0) + acc.toInt()
+    }
+
+    fun add(c: Context, dt: Float): Int {
+        used(c)
+        acc += dt
+        val now = System.currentTimeMillis()
+        if (now - lastSave > 10_000 || acc >= 10f) {
+            LockStore.setInt(c, "reel_sec", LockStore.int(c, "reel_sec", 0) + acc.toInt())
+            acc -= acc.toInt()
+            lastSave = now
+        }
+        return used(c)
+    }
 }

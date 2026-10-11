@@ -1,6 +1,7 @@
 package com.ashu.ashutool
 
 import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -33,7 +34,8 @@ class Pal(
     val bg1: Color, val bg2: Color, val bg3: Color,
     val orb1: Color, val orb2: Color, val orb3: Color, val orbA: Float,
     val primary: Grad, val secondary: Grad,
-    val glassTop: Float, val glassBottom: Float, val bA: Float, val bB: Float, val bC: Float
+    val glassTop: Float, val glassBottom: Float, val bA: Float, val bB: Float, val bC: Float,
+    val shine: Boolean = false
 ) {
     val tint: Color get() = if (dark) Color.White else Color.Black
 }
@@ -43,7 +45,14 @@ private fun c(v: Long) = Color(v)
 object Palette {
     /** Index into [themes]. Indexes 0 to 2 are kept stable across versions. */
     var mode by mutableIntStateOf(0)
-    var animated by mutableStateOf(true)
+    var animated by mutableStateOf(false)
+
+    /** When on, the theme follows the system: Slate in dark mode, Slate light in light mode. */
+    var auto by mutableStateOf(true)
+    var systemDark by mutableStateOf(true)
+
+    /** Glass strength multiplier, 0.6 to 1.6 */
+    var glass by mutableFloatStateOf(1f)
 
     val themes: List<Pal> = listOf(
         Pal("Aurora", true, false, c(0xFFF2F6FF), c(0xFF9FADC7), c(0xFF141C33), c(0xFF2DE2C0),
@@ -81,14 +90,30 @@ object Palette {
             Grad(c(0xFFF59E0B), c(0xFFEF4444)), Grad(c(0xFFFB923C), c(0xFFF43F5E)), 0.08f, 0.03f, 0.22f, 0.05f, 0.10f),
         Pal("Sky", false, false, c(0xFF0B1630), c(0xFF56627A), c(0xFFFFFFFF), c(0xFF2563EB),
             c(0xFFEAF4FF), c(0xFFD9E9FF), c(0xFFEEF0FF), c(0xFF60A5FA), c(0xFFA78BFA), c(0xFF38BDF8), 0.45f,
-            Grad(c(0xFF3B82F6), c(0xFF8B5CF6)), Grad(c(0xFF6366F1), c(0xFF06B6D4)), 0.08f, 0.03f, 0.22f, 0.05f, 0.10f)
+            Grad(c(0xFF3B82F6), c(0xFF8B5CF6)), Grad(c(0xFF6366F1), c(0xFF06B6D4)), 0.08f, 0.03f, 0.22f, 0.05f, 0.10f),
+        Pal("Slate", true, false, c(0xFFF1F5F9), c(0xFF94A3B8), c(0xFF1E293B), c(0xFF38BDF8),
+            c(0xFF0B1120), c(0xFF111B2E), c(0xFF0E1626), c(0xFF5B6B8C), c(0xFF3B82F6), c(0xFF64748B), 0.40f,
+            Grad(c(0xFF38BDF8), c(0xFF818CF8)), Grad(c(0xFF94A3B8), c(0xFF38BDF8)), 0.17f, 0.06f, 0.46f, 0.06f, 0.26f, true),
+        Pal("Slate light", false, false, c(0xFF0F172A), c(0xFF475569), c(0xFFFFFFFF), c(0xFF0284C7),
+            c(0xFFEEF2F7), c(0xFFE2E8F0), c(0xFFF1F5F9), c(0xFF94A3B8), c(0xFF7DD3FC), c(0xFFA5B4FC), 0.45f,
+            Grad(c(0xFF0EA5E9), c(0xFF6366F1)), Grad(c(0xFF64748B), c(0xFF0EA5E9)), 0.10f, 0.04f, 0.26f, 0.06f, 0.14f, true),
+        Pal("Glass black", true, false, c(0xFFFFFFFF), c(0xFFA1A1AA), c(0xFF0A0A0F), c(0xFF7DF9FF),
+            c(0xFF000000), c(0xFF05060A), c(0xFF000000), c(0xFF6366F1), c(0xFF22D3EE), c(0xFFFFFFFF), 0.20f,
+            Grad(c(0xFF7DF9FF), c(0xFFA78BFA)), Grad(c(0xFFFFFFFF), c(0xFF7DF9FF)), 0.13f, 0.04f, 0.55f, 0.06f, 0.32f, true)
     )
 
-    val cur: Pal get() = themes[mode.coerceIn(0, themes.size - 1)]
+    /** Index of the theme used when following the system. */
+    const val SLATE = 12
+    const val SLATE_LIGHT = 13
+
+    val cur: Pal get() = if (auto) themes[if (systemDark) SLATE else SLATE_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
 
     fun load(ctx: Context) {
-        mode = LockStore.int(ctx, "theme", 0).coerceIn(0, themes.size - 1)
-        animated = LockStore.bool(ctx, "anim_bg", true)
+        mode = LockStore.int(ctx, "theme", SLATE).coerceIn(0, themes.size - 1)
+        auto = LockStore.bool(ctx, "theme_auto", true)
+        systemDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        animated = LockStore.bool(ctx, "anim_bg", false)
+        glass = LockStore.int(ctx, "glass_x", 100).coerceIn(60, 160) / 100f
     }
 }
 

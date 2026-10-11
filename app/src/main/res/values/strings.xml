@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Ashutool</string>
     <string name="games_name">Ashu Games</string>
-    <string name="a11y_desc">Lets Ashutool cover locked apps the moment they open, tell game mode which app is in front, and listen for the vault volume keys. It never reads screen content.</string>
+    <string name="a11y_desc">Covers locked apps the moment they open, blurs locked apps on the recents screen, enforces app time limits and the reels blocker, and listens for the vault dial code and volume keys. It only looks at window titles and a few view ids in the launcher, Instagram, YouTube and the dialer. Nothing is stored or sent.</string>
 </resources>

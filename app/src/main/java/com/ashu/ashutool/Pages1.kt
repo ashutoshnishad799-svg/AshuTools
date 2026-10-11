@@ -230,7 +230,7 @@ fun MemoryPage() {
     var swaps by remember { mutableStateOf<List<String>>(emptyList()) }
     var confirmOff by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
+    WhileVisible {
         while (true) {
             val r = withContext(Dispatchers.IO) { Sys.mem() }
             m = r
@@ -347,91 +347,13 @@ fun MemoryPage() {
     )
 }
 
-// ------------------------------------------------------------------ Battery
-
-@Composable
-fun BatteryPage() {
-    val s by Monitor.snap.collectAsState()
-    val ctx = LocalContext.current
-    val b = s.batt
-    val watts = b.mv / 1000f * b.ma / 1000f
-    var power by remember { mutableStateOf<List<Triple<String, String, Float>>?>(null) }
-    LaunchedEffect(Unit) { power = withContext(Dispatchers.IO) { Sys.appPower(ctx) } }
-    val series = remember(s) { BatteryLog.series() }
-    val rate = s.ratePh
-
-    Page("Battery", "Health, drain and charge", GGreen, Icons.Outlined.BatteryChargingFull) {
-        item {
-            Glass {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Gauge(
-                        b.level / 100f, "${b.level}%", b.status,
-                        if (b.charging) Icons.Outlined.BatteryChargingFull else Icons.Outlined.BatteryFull,
-                        if (b.level <= 15 && !b.charging) GRed else GGreen, dia = 128.dp
-                    )
-                    Spacer(Modifier.width(20.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("${b.ma} mA", color = TextHi, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                        Text("${"%.1f".format(watts)} W", color = TextLo, fontSize = 14.sp)
-                        Text(if (b.charging) "Charging current" else "Discharge current", color = TextLo, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-        item {
-            TileGrid(
-                listOf(
-                    Tile(Icons.Outlined.BatteryAlert, if (b.charging) "Charge rate" else "Drain rate",
-                        rate?.let { "${if (it > 0) "+" else ""}${"%.1f".format(it)} %/h" } ?: "Measuring", if (b.charging) GGreen else GFire),
-                    Tile(Icons.Outlined.Schedule, "Used in 24 h", "${"%.0f".format(s.drain24)}%", GBlue),
-                    Tile(Icons.Outlined.Timelapse, "24 h average", "${"%.1f".format(s.avg24)} %/h", GViolet),
-                    Tile(Icons.Outlined.Thermostat, "Temperature", "${"%.1f".format(b.tempC)}\u00B0C", tempGrad(b.tempC)),
-                    Tile(Icons.Outlined.Bolt, "Voltage", "${"%.2f".format(b.mv / 1000f)} V", GBlue),
-                    Tile(Icons.Outlined.HealthAndSafety, "Health", b.health, GGreen),
-                    Tile(Icons.Outlined.Power, "Source", b.plugged, GCyan),
-                    Tile(Icons.Outlined.BatteryStd, "Capacity health", if (b.capHealth >= 0) "${b.capHealth}%" else "Not exposed", GTeal),
-                    Tile(Icons.Outlined.Autorenew, "Charge cycles", if (b.cycles >= 0) "${b.cycles}" else "Not exposed", GViolet),
-                    Tile(Icons.Outlined.Science, "Technology", b.tech, GPink)
-                )
-            )
-        }
-        item { Glass { SectionTitle("Battery level", "last 24 hours"); LineChart(series, GGreen, maxV = 100f) } }
-        item { Glass { SectionTitle("Current draw", "mA"); LineChart(s.currHist, GBlue) } }
-        item { Glass { SectionTitle("Battery temperature", "\u00B0C"); LineChart(s.tempHist, GFire) } }
-        item {
-            Glass {
-                SectionTitle("Use by app", "since last full charge")
-                val list = power
-                if (list == null) Hint("Reading battery stats")
-                else if (list.isEmpty()) Hint("This ROM does not report per-app battery use.")
-                else {
-                    val top = list.first().third.coerceAtLeast(0.1f)
-                    list.forEach { (pkg, name, mah) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            AppIcon(pkg, 34.dp)
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Row {
-                                    Text(name, color = TextHi, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    Text("${"%.0f".format(mah)} mAh", color = TextLo, fontSize = 12.sp)
-                                }
-                                Spacer(Modifier.height(5.dp))
-                                Bar(mah / top, GGreen)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ------------------------------------------------------------------ Thermal
 
 @Composable
-fun ThermalPage() {
+fun ThermalMain(open: (String) -> Unit) {
     val s by Monitor.snap.collectAsState()
     Page("Thermal", "Every sensor on the device", GFire, Icons.Outlined.Thermostat) {
+        item { NavRow(Icons.Outlined.LocalFireDepartment, GFire, "Heat by app", "Which apps run hot, now and over time") { open("heat") } }
         item {
             Glass {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -463,7 +385,7 @@ fun ThermalPage() {
 // -------------------------------------------------------------------- Usage
 
 @Composable
-fun UsagePage() {
+fun UsageMain(open: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var access by remember { mutableStateOf(Usage.hasAccess(ctx)) }
@@ -476,7 +398,9 @@ fun UsagePage() {
         }
     }
 
-    Page("App usage", "Screen time per app", GBlue, Icons.Outlined.QueryStats) {
+    Page("App usage", "Screen time, limits and reels", GBlue, Icons.Outlined.QueryStats) {
+        item { NavRow(Icons.Outlined.Timer, GBlue, "App limits", "Daily time limit per app, with custom timing") { open("limits") } }
+        item { NavRow(Icons.Outlined.VideoLibrary, GPink, "Reels blocker", "Block or limit Instagram Reels and YouTube Shorts") { open("reels") } }
         if (!access) {
             item {
                 Glass {
@@ -534,3 +458,12 @@ fun UsagePage() {
         }
     }
 }
+
+@Composable
+fun ThermalPage() = SubHost(root = { open -> ThermalMain(open) }, sub = { _, back -> AppHeatPage(back) })
+
+@Composable
+fun UsagePage() = SubHost(
+    root = { open -> UsageMain(open) },
+    sub = { k, back -> if (k == "limits") LimitsPage(back) else ReelsPage(back) }
+)

@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -41,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -51,6 +54,16 @@ class MainActivity : ComponentActivity() {
         applyBars(this)
         val alias = intent?.component?.className?.endsWith("GamesAlias") == true
         setContent { AshuTheme { Aurora { AshuApp(if (alias) P.GAMES else P.HOME) } } }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Monitor.uiVisible = true
+    }
+
+    override fun onStop() {
+        Monitor.uiVisible = false
+        super.onStop()
     }
 }
 
@@ -64,12 +77,11 @@ private fun applyBars(a: ComponentActivity) {
 enum class P(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Outlined.Home),
     GAMES("Games", Icons.Outlined.SportsEsports),
+    CALLS("Calls", Icons.Outlined.Call),
     CPU("CPU", Icons.Outlined.Memory),
     MEMORY("Memory", Icons.Outlined.DeveloperBoard),
     BATTERY("Battery", Icons.Outlined.BatteryChargingFull),
-    CHARGING("Charging", Icons.Outlined.Power),
     THERMAL("Thermal", Icons.Outlined.Thermostat),
-    APPHEAT("App heat", Icons.Outlined.LocalFireDepartment),
     USAGE("Usage", Icons.Outlined.QueryStats),
     MANAGER("Apps", Icons.Outlined.Apps),
     LOCK("Lock", Icons.Outlined.Lock),
@@ -98,8 +110,20 @@ fun AshuApp(start: P) {
     }
     LaunchedEffect(Palette.mode) { (ctx as? ComponentActivity)?.let { applyBars(it) } }
     BackHandler(enabled = page != P.HOME) { page = P.HOME }
+    val sysDark = isSystemInDarkTheme()
+    LaunchedEffect(sysDark) { Palette.systemDark = sysDark }
+    val protect = LockStore.bool(ctx, "protect_self", true) && LockStore.hasCred(ctx)
+    var authed by remember { mutableStateOf(false) }
+    val act = ctx as? ComponentActivity
+    DisposableEffect(act) {
+        val obs = LifecycleEventObserver { _, ev -> if (ev == Lifecycle.Event.ON_STOP) authed = false }
+        act?.lifecycle?.addObserver(obs)
+        onDispose { act?.lifecycle?.removeObserver(obs) }
+    }
 
-    Column(Modifier.fillMaxSize()) {
+    if (protect && !authed) {
+        LockPanel(null, 0f, onOk = { authed = true }, onCancel = { act?.finish() }, title = "Ashutool")
+    } else Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             AnimatedContent(
                 targetState = page,
@@ -121,12 +145,11 @@ private fun PageHost(p: P, root: Boolean?) {
     when (p) {
         P.HOME -> HomePage(root)
         P.GAMES -> GamesPage()
+        P.CALLS -> CallsPage()
         P.CPU -> CpuPage()
         P.MEMORY -> MemoryPage()
         P.BATTERY -> BatteryPage()
-        P.CHARGING -> ChargingPage()
         P.THERMAL -> ThermalPage()
-        P.APPHEAT -> AppHeatPage()
         P.USAGE -> UsagePage()
         P.MANAGER -> ManagerPage()
         P.LOCK -> LockPage()

@@ -33,6 +33,8 @@ object Safety {
     @Volatile private var uiAt = 0L
     @Volatile private var uiSet: Set<String> = emptySet()
     @Volatile private var allSet: Set<String> = emptySet()
+    @Volatile private var homeSet: Set<String> = emptySet()
+    @Volatile private var dialSet: Set<String> = emptySet()
 
     /** Launchers and the active keyboard. Locking or hiding these would strand the user. */
     @Suppress("DEPRECATION")
@@ -41,18 +43,22 @@ object Safety {
         if (now - uiAt < 60_000 && allSet.isNotEmpty()) return
         val ui = HashSet<String>()
         val all = HashSet<String>()
+        val homes = HashSet<String>()
+        val dial = HashSet<String>(listOf("com.google.android.dialer", "com.android.dialer", "com.samsung.android.dialer", "com.android.incallui"))
         try {
             ctx.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
-                .forEach { ui += it.activityInfo.packageName }
+                .forEach { ui += it.activityInfo.packageName; homes += it.activityInfo.packageName }
         } catch (_: Exception) {}
         try {
             Settings.Secure.getString(ctx.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
                 ?.substringBefore('/')?.let { ui += it }
         } catch (_: Exception) {}
         all += ui
-        try { ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage?.let { all += it } } catch (_: Exception) {}
+        try { ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage?.let { all += it; dial += it } } catch (_: Exception) {}
         try { Telephony.Sms.getDefaultSmsPackage(ctx)?.let { all += it } } catch (_: Exception) {}
         uiSet = ui
+        homeSet = homes
+        dialSet = dial
         allSet = all
         uiAt = now
     }
@@ -69,6 +75,12 @@ object Safety {
         } catch (e: Exception) { -1 }
         return u in 0..9999
     }
+
+    /** Dialer and in-call packages. */
+    fun dialerPkgs(ctx: Context): Set<String> { refresh(ctx); return dialSet }
+
+    /** Launcher packages. The recents screen lives in one of them. */
+    fun homePkgs(ctx: Context): Set<String> { refresh(ctx); return homeSet }
 
     /** Apps the lock screen must never cover. */
     fun lockForbidden(ctx: Context, pkg: String): Boolean {
