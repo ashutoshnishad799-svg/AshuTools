@@ -153,7 +153,31 @@ private fun GamesMain(open: (String) -> Unit) {
     LaunchedEffect(Unit) { games = withContext(Dispatchers.IO) { GameMode.games(ctx) } }
     val list = remember(apps, games) { (apps ?: emptyList()).filter { it.pkg in games } }
 
+    var overlayOk by remember { mutableStateOf(Settings.canDrawOverlays(ctx)) }
+    var usageOk by remember { mutableStateOf(Usage.hasAccess(ctx)) }
+    val a11yOk = AshuAccessibility.connected
+    val missing = !overlayOk || !(a11yOk || usageOk) || Guard.safe
+
     Page("Game launcher", "Boost, sidebar and quick launch", GTeal, Icons.Outlined.SportsEsports) {
+        if (missing) item {
+            Glass {
+                Text("The game bar needs these", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                StatusRow("Draw over other apps", overlayOk)
+                StatusRow("Sees which game is open", a11yOk || usageOk)
+                StatusRow("Safe mode off", !Guard.safe)
+                Spacer(Modifier.height(8.dp))
+                GradButton(if (Guard.safe) "Resume and fix with root" else "Fix with root", GTeal, Icons.Outlined.Build) {
+                    scope.launch {
+                        if (Guard.safe) { Guard.safe = false; LockStore.setStr(ctx, "starts", "") }
+                        withContext(Dispatchers.IO) { Root.bootstrap(ctx) }
+                        overlayOk = Settings.canDrawOverlays(ctx)
+                        usageOk = Usage.hasAccess(ctx)
+                        toast(ctx, "Permissions refreshed")
+                    }
+                }
+            }
+        }
         item {
             Glass {
                 Row(verticalAlignment = Alignment.CenterVertically) {

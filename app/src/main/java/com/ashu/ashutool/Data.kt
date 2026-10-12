@@ -27,6 +27,13 @@ data class UsageItem(val pkg: String, val name: String, val ms: Long)
 object Fg {
     @Volatile var pkg: String? = null
     @Volatile var prev: String? = null
+
+    /**
+     * The game you are in right now, or null. It stays set while a call, a store popup or a Google sign-in
+     * window is on top of the game, and clears when you go to any other app or the home screen.
+     * Game bar and call controls follow this, not the plain foreground app.
+     */
+    @Volatile var game: String? = null
     @Volatile var listener: ((String) -> Unit)? = null
 
     /** Records a new foreground app and tells the listener, only when it actually changed. */

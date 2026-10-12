@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.WindowManager
@@ -15,7 +17,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,11 +28,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,16 +49,46 @@ private fun RoundBtn(icon: ImageVector, desc: String, bg: Color, size: Int = 34,
     ) { Icon(icon, desc, tint = Color.White, modifier = Modifier.size((size * 0.55f).dp)) }
 }
 
-/** A small window you can drag anywhere. Its position is remembered between uses. */
+/**
+ * A small window you can drag anywhere. Its position is remembered between uses, separately for portrait and landscape.
+ * Dragging is done by the overlay host in raw screen pixels, see DragSpec. The window is kept fully on screen.
+ */
 abstract class FloatingWindow(protected val ctx: Context, private val key: String) {
     protected val overlay = Overlay(ctx)
     protected var lp: WindowManager.LayoutParams? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var defX = 0
+    private var defY = 0
 
     val isShown: Boolean get() = overlay.isShown
 
     fun hide() = overlay.remove()
 
-    protected fun newParams(defX: Int, defY: Int): WindowManager.LayoutParams {
+    private fun side(): String {
+        val (w, h) = screenSize(ctx)
+        return if (w > h) "L" else "P"
+    }
+
+    /** Keeps the whole window on screen. Before the first layout it assumes a small window. */
+    private fun clamp(p: WindowManager.LayoutParams) {
+        val (sw, sh) = screenSize(ctx)
+        val (w, h) = overlay.size()
+        val d = ctx.resources.displayMetrics.density
+        val ww = if (w > 0) w else (60 * d).toInt()
+        val hh = if (h > 0) h else (40 * d).toInt()
+        p.x = p.x.coerceIn(0, (sw - ww).coerceAtLeast(0))
+        p.y = p.y.coerceIn(0, (sh - hh).coerceAtLeast(0))
+    }
+
+    private fun place(p: WindowManager.LayoutParams) {
+        p.x = LockStore.int(ctx, "${key}_x${side()}", defX)
+        p.y = LockStore.int(ctx, "${key}_y${side()}", defY)
+        clamp(p)
+    }
+
+    protected fun newParams(defaultX: Int, defaultY: Int): WindowManager.LayoutParams {
+        defX = defaultX
+        defY = defaultY
         val p = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -67,29 +96,43 @@ abstract class FloatingWindow(protected val ctx: Context, private val key: Strin
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
-        val (sw, sh) = screenSize(ctx)
         p.gravity = Gravity.TOP or Gravity.START
-        p.x = LockStore.int(ctx, "${key}_x", defX).coerceIn(0, (sw - 60).coerceAtLeast(0))
-        p.y = LockStore.int(ctx, "${key}_y", defY).coerceIn(0, (sh - 60).coerceAtLeast(0))
+        place(p)
         lp = p
         return p
     }
 
-    /** Drag handler. It moves the window by how far the finger moved from where it grabbed. */
-    protected fun dragModifier(): Modifier = Modifier.pointerInput(Unit) {
-        var grab = Offset.Zero
-        detectDragGestures(
-            onDragStart = { grab = it },
-            onDrag = { change, _ ->
-                change.consume()
-                lp?.let {
-                    it.x += (change.position.x - grab.x).toInt()
-                    it.y += (change.position.y - grab.y).toInt()
-                    overlay.update(it)
-                }
-            },
-            onDragEnd = { lp?.let { LockStore.setInt(ctx, "${key}_x", it.x); LockStore.setInt(ctx, "${key}_y", it.y) } }
-        )
+    /** Moves the window by exactly how far the finger moved on the screen, and remembers where it ended. */
+    protected fun dragSpec() = DragSpec(
+        longPress = false,
+        onMove = { dx, dy ->
+            lp?.let { p ->
+                p.x += dx
+                p.y += dy
+                clamp(p)
+                overlay.update(p)
+            }
+        },
+        onEnd = {
+            lp?.let {
+                LockStore.setInt(ctx, "${key}_x${side()}", it.x)
+                LockStore.setInt(ctx, "${key}_y${side()}", it.y)
+            }
+        }
+    )
+
+    /** Call after the content changes size or the window was just added, so it never ends up half off screen. */
+    protected fun settle() {
+        handler.postDelayed({ lp?.let { clamp(it); overlay.update(it) } }, 90)
+    }
+
+    /** Call after the screen turns. Loads the spot saved for the new orientation. */
+    fun reposition() {
+        val p = lp ?: return
+        if (!overlay.isShown) return
+        place(p)
+        overlay.update(p)
+        settle()
     }
 }
 
@@ -101,7 +144,8 @@ class RecordPill(ctx: Context) : FloatingWindow(ctx, "rec") {
         if (isShown) return
         val d = ctx.resources.displayMetrics.density
         val (sw, _) = screenSize(ctx)
-        overlay.show(newParams((sw / 2 - 70 * d).toInt(), (48 * d).toInt())) { Pill() }
+        overlay.show(newParams((sw / 2 - 70 * d).toInt(), (48 * d).toInt()), drag = dragSpec()) { Pill() }
+        settle()
     }
 
     @Composable
@@ -118,7 +162,7 @@ class RecordPill(ctx: Context) : FloatingWindow(ctx, "rec") {
         )
         val shape = RoundedCornerShape(50)
         Row(
-            dragModifier().clip(shape).background(Glass45).border(1.dp, Edge25, shape)
+            Modifier.clip(shape).background(Glass45).border(1.dp, Edge25, shape)
                 .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -142,7 +186,8 @@ class CallPill(ctx: Context) : FloatingWindow(ctx, "callpill") {
         collapsed = false
         val d = ctx.resources.displayMetrics.density
         val (sw, _) = screenSize(ctx)
-        overlay.show(newParams((sw / 2 - 100 * d).toInt(), (110 * d).toInt())) { Content() }
+        overlay.show(newParams((sw / 2 - 100 * d).toInt(), (110 * d).toInt()), drag = dragSpec()) { Content() }
+        settle()
     }
 
     @Composable
@@ -157,14 +202,14 @@ class CallPill(ctx: Context) : FloatingWindow(ctx, "callpill") {
         val shape = RoundedCornerShape(50)
         if (collapsed) {
             Box(
-                dragModifier().size(32.dp).clip(CircleShape).background(Glass45).border(1.dp, Edge25, CircleShape)
-                    .clickable { collapsed = false },
+                Modifier.size(32.dp).clip(CircleShape).background(Glass45).border(1.dp, Edge25, CircleShape)
+                    .clickable { collapsed = false; settle() },
                 contentAlignment = Alignment.Center
             ) { Icon(Icons.Outlined.Call, "Show call controls", tint = Color(0xFF34D399), modifier = Modifier.size(17.dp)) }
         } else {
             val off = Color.White.copy(alpha = 0.16f)
             Row(
-                dragModifier().clip(shape).background(Glass45).border(1.dp, Edge25, shape).padding(4.dp),
+                Modifier.clip(shape).background(Glass45).border(1.dp, Edge25, shape).padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -172,7 +217,7 @@ class CallPill(ctx: Context) : FloatingWindow(ctx, "callpill") {
                 RoundBtn(Icons.Outlined.Speaker, "Speaker", if (Calls.speaker) Color(0xFF2563EB) else off) { Calls.setSpeaker(ctx, !Calls.speaker) }
                 RoundBtn(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, "Mute", if (Calls.muted) Color(0xFF2563EB) else off) { Calls.setMute(ctx, !Calls.muted) }
                 RoundBtn(Icons.Outlined.CallEnd, "End call", Color(0xFFFF4D4D)) { Thread { Calls.end(ctx) }.start() }
-                RoundBtn(Icons.Outlined.VisibilityOff, "Hide", off) { collapsed = true }
+                RoundBtn(Icons.Outlined.VisibilityOff, "Hide", off) { collapsed = true; settle() }
             }
         }
     }

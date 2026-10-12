@@ -44,7 +44,7 @@ object Safety {
         val ui = HashSet<String>()
         val all = HashSet<String>()
         val homes = HashSet<String>()
-        val dial = HashSet<String>(listOf("com.google.android.dialer", "com.android.dialer", "com.samsung.android.dialer", "com.android.incallui"))
+        val dial = HashSet<String>(listOf("com.google.android.dialer", "com.android.dialer", "com.samsung.android.dialer", "com.android.incallui", "com.samsung.android.incallui"))
         try {
             ctx.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
                 .forEach { ui += it.activityInfo.packageName; homes += it.activityInfo.packageName }

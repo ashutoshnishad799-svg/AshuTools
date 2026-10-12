@@ -2,16 +2,23 @@ package com.ashu.ashutool
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.util.DisplayMetrics
+import android.view.Display
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -26,7 +33,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -48,11 +54,9 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,10 +78,19 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.hypot
 
-/** Full screen size in pixels, including the area under system bars. */
+/** Full screen size in pixels, including the area under system bars. Follows rotation. */
 @Suppress("DEPRECATION")
 fun screenSize(ctx: Context): Pair<Int, Int> {
+    try {
+        val d = ctx.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
+        if (d != null) {
+            val dm = DisplayMetrics()
+            d.getRealMetrics(dm)
+            if (dm.widthPixels > 0 && dm.heightPixels > 0) return dm.widthPixels to dm.heightPixels
+        }
+    } catch (_: Exception) {}
     val wm = ctx.getSystemService(WindowManager::class.java)
     if (Build.VERSION.SDK_INT >= 30) {
         val b = wm.currentWindowMetrics.bounds
@@ -88,13 +101,134 @@ fun screenSize(ctx: Context): Pair<Int, Int> {
     return dm.widthPixels to dm.heightPixels
 }
 
+/**
+ * Lets an overlay window move itself. The movement is measured in raw screen pixels, never in window
+ * coordinates. When the window moves under the finger, window coordinates change with it, and that feedback
+ * is what made the old floating pill shake and fly off screen.
+ * longPress = false: drag as soon as the finger moves. longPress = true: drag only after a press and hold,
+ * so taps and swipes on the content still work.
+ */
+class DragSpec(
+    val longPress: Boolean,
+    val onStart: () -> Unit = {},
+    val onMove: (Int, Int) -> Unit,
+    val onEnd: () -> Unit = {}
+)
+
+/** Root view of every overlay window. It watches touches before the content does and takes over when a drag begins. */
+private class DragFrame(ctx: Context) : FrameLayout(ctx) {
+    var spec: DragSpec? = null
+    private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+    private val pressTime = ViewConfiguration.getLongPressTimeout().toLong()
+    private var downX = 0f
+    private var downY = 0f
+    private var curX = 0f
+    private var curY = 0f
+    private var lastX = 0f
+    private var lastY = 0f
+    private var dragging = false
+    private var tracking = false
+
+    private val arm = Runnable {
+        val s = spec
+        if (s != null && tracking && !dragging) {
+            dragging = true
+            lastX = curX
+            lastY = curY
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            s.onStart()
+        }
+    }
+
+    private fun begin(ev: MotionEvent) {
+        removeCallbacks(arm)
+        downX = ev.rawX
+        downY = ev.rawY
+        curX = downX
+        curY = downY
+        lastX = downX
+        lastY = downY
+        dragging = false
+        tracking = true
+        if (spec?.longPress == true) postDelayed(arm, pressTime)
+    }
+
+    private fun move(ev: MotionEvent) {
+        val s = spec ?: return
+        curX = ev.rawX
+        curY = ev.rawY
+        if (dragging || !tracking) return
+        if (hypot(curX - downX, curY - downY) > slop) {
+            if (s.longPress) {
+                removeCallbacks(arm)
+                tracking = false
+            } else {
+                dragging = true
+                lastX = curX
+                lastY = curY
+                s.onStart()
+            }
+        }
+    }
+
+    private fun drag(ev: MotionEvent) {
+        val s = spec ?: return
+        val dx = (ev.rawX - lastX).toInt()
+        val dy = (ev.rawY - lastY).toInt()
+        if (dx != 0 || dy != 0) {
+            lastX += dx
+            lastY += dy
+            s.onMove(dx, dy)
+        }
+    }
+
+    private fun finish(): Boolean {
+        removeCallbacks(arm)
+        val was = dragging
+        dragging = false
+        tracking = false
+        if (was) spec?.onEnd?.invoke()
+        return was
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (spec == null) return false
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> begin(ev)
+            MotionEvent.ACTION_MOVE -> move(ev)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> return finish()
+        }
+        return dragging
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (spec == null) return super.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> begin(ev)
+            MotionEvent.ACTION_MOVE -> { move(ev); if (dragging) drag(ev) }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> finish()
+        }
+        return true
+    }
+
+    /** A child must not be able to switch our interception off, or the drag would never start. */
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        if (spec == null) super.requestDisallowInterceptTouchEvent(disallowIntercept)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(arm)
+        super.onDetachedFromWindow()
+    }
+}
+
 /** Hosts Compose in a window that is not an Activity. Used by every overlay in the app. */
 class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
     private val registry = LifecycleRegistry(this)
     private val saved = SavedStateRegistryController.create(this)
     private val store = ViewModelStore()
     private val wm = ctx.getSystemService(WindowManager::class.java)
-    private var view: ComposeView? = null
+    private var view: DragFrame? = null
 
     override val lifecycle: Lifecycle get() = registry
     override val savedStateRegistry: SavedStateRegistry get() = saved.savedStateRegistry
@@ -108,31 +242,48 @@ class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwne
 
     val isShown: Boolean get() = view != null
 
-    /** onOutside is called when the user touches anywhere outside the window. The window needs FLAG_WATCH_OUTSIDE_TOUCH. */
-    fun show(params: WindowManager.LayoutParams, onOutside: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    /** Measured size of the window in pixels. Zero until the first layout has happened. */
+    fun size(): Pair<Int, Int> = (view?.width ?: 0) to (view?.height ?: 0)
+
+    /**
+     * onOutside is called when the user touches anywhere outside the window. The window needs FLAG_WATCH_OUTSIDE_TOUCH.
+     * drag makes the whole window movable, see DragSpec.
+     */
+    fun show(
+        params: WindowManager.LayoutParams,
+        onOutside: (() -> Unit)? = null,
+        drag: DragSpec? = null,
+        content: @Composable () -> Unit
+    ) {
         remove()
         Palette.load(ctx)
         params.flags = params.flags or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        val frame = DragFrame(ctx)
+        frame.spec = drag
         val v = ComposeView(ctx)
-        v.setViewTreeLifecycleOwner(this)
-        v.setViewTreeSavedStateRegistryOwner(this)
-        v.setViewTreeViewModelStoreOwner(this)
+        for (h in listOf<View>(frame, v)) {
+            h.setViewTreeLifecycleOwner(this)
+            h.setViewTreeSavedStateRegistryOwner(this)
+            h.setViewTreeViewModelStoreOwner(this)
+        }
+        frame.addView(v, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         if (onOutside != null) {
-            v.setOnTouchListener { _, ev ->
+            frame.setOnTouchListener { _, ev ->
                 if (ev.action == MotionEvent.ACTION_OUTSIDE) { onOutside(); true } else false
             }
         }
         v.setContent { AshuTheme { content() } }
         registry.currentState = Lifecycle.State.RESUMED
         try {
-            wm.addView(v, params)
-            view = v
+            wm.addView(frame, params)
+            view = frame
         } catch (e: Exception) {
             registry.currentState = Lifecycle.State.CREATED
         }
     }
 
     fun update(params: WindowManager.LayoutParams) {
+        params.flags = params.flags or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
         view?.let { try { wm.updateViewLayout(it, params) } catch (_: Exception) {} }
     }
 
@@ -228,7 +379,8 @@ private val SbLow = Color(0xFFB4C0D8)
 
 /**
  * Edge bar that opens a tool panel while a game is in front.
- * Tap to open. Long press and drag to move it to any edge. Swipe it towards the edge to hide it.
+ * Tap or swipe it inward to open. Press and hold, then drag, to move it to any edge.
+ * The bar stays on screen for the whole game. It is never swiped away, only moved.
  * The panel is a normal sized window, not full screen, and closes when you touch outside it.
  */
 class GameSidebar(private val ctx: Context) {
@@ -239,7 +391,6 @@ class GameSidebar(private val ctx: Context) {
     private var closing = false
     private var dragging = false
     private var lastFail = 0L
-    private var dismissedFor: String? = null
     private var handleLp: WindowManager.LayoutParams? = null
 
     private var pkg by mutableStateOf("")
@@ -252,6 +403,15 @@ class GameSidebar(private val ctx: Context) {
     private var barW by mutableIntStateOf(7)
     private var barH by mutableIntStateOf(88)
     private var pos by mutableIntStateOf(50)
+
+    val isShown: Boolean get() = overlay.isShown
+
+    private val dragSpec = DragSpec(
+        longPress = true,
+        onStart = { dragging = true },
+        onMove = { dx, dy -> moveBy(dx, dy) },
+        onEnd = { dock() }
+    )
 
     private fun reload() {
         edge = LockStore.int(ctx, "g_edge", 1).coerceIn(0, 3)
@@ -310,29 +470,50 @@ class GameSidebar(private val ctx: Context) {
         return lp
     }
 
-    /** Shows the bar for a game. Safe to call every tick. Retries if the window could not be added. */
-    fun showFor(p: String) {
-        pkg = p
-        if (dismissedFor == p) return
-        if (overlay.isShown) { refresh(); return }
-        if (SystemClock.elapsedRealtime() - lastFail < 3000) return
-        alive = true
+    /** Adds the bar window. */
+    private fun showHandle() {
         reload()
-        expanded = false
-        open = false
         val lp = handleParams()
         handleLp = lp
-        overlay.show(lp) { Content() }
+        overlay.show(lp, drag = dragSpec) { Content() }
         if (!overlay.isShown) lastFail = SystemClock.elapsedRealtime()
     }
 
-    /** Applies size, colour and position changes made in the Games page while the bar is visible. */
+    /**
+     * Shows the bar for a game. Safe to call as often as you like: it adds the window if it is missing,
+     * and fixes its size and place if the screen turned or a setting changed.
+     */
+    fun showFor(p: String) {
+        pkg = p
+        if (overlay.isShown) { refresh(); return }
+        if (SystemClock.elapsedRealtime() - lastFail < 2000) return
+        alive = true
+        expanded = false
+        open = false
+        closing = false
+        showHandle()
+    }
+
+    /** Applies size, colour, position and rotation changes while the bar is visible. */
     private fun refresh() {
         if (dragging || expanded) return
         reload()
         val lp = handleParams()
+        val cur = handleLp
+        if (cur != null && cur.x == lp.x && cur.y == lp.y && cur.width == lp.width && cur.height == lp.height) return
         handleLp = lp
         overlay.update(lp)
+    }
+
+    /** Called after the screen turns. A panel that is open is closed so it can never end up off screen. */
+    fun relayout() {
+        if (!alive || !overlay.isShown) return
+        if (expanded) {
+            expanded = false
+            open = false
+            closing = false
+            showHandle()
+        } else refresh()
     }
 
     fun hide() {
@@ -340,15 +521,8 @@ class GameSidebar(private val ctx: Context) {
         open = false
         expanded = false
         closing = false
+        dragging = false
         overlay.remove()
-    }
-
-    fun resetDismiss() { dismissedFor = null }
-
-    private fun dismiss() {
-        dismissedFor = pkg
-        hide()
-        handler.post { toast(ctx, "Sidebar hidden for this game") }
     }
 
     private fun openPanel() {
@@ -367,16 +541,15 @@ class GameSidebar(private val ctx: Context) {
             closing = false
             if (!alive) return@postDelayed
             expanded = false
-            val lp = handleParams()
-            handleLp = lp
-            overlay.show(lp) { Content() }
+            showHandle()
         }, 320)
     }
 
-    private fun moveBy(dx: Float, dy: Float) {
+    private fun moveBy(dx: Int, dy: Int) {
         val lp = handleLp ?: return
-        lp.x += dx.toInt()
-        lp.y += dy.toInt()
+        val (sw, sh) = screenSize(ctx)
+        lp.x = (lp.x + dx).coerceIn(0, (sw - lp.width).coerceAtLeast(0))
+        lp.y = (lp.y + dy).coerceIn(0, (sh - lp.height).coerceAtLeast(0))
         overlay.update(lp)
     }
 
@@ -412,8 +585,6 @@ class GameSidebar(private val ctx: Context) {
     @Composable
     private fun HandleView() {
         val d = LocalDensity.current.density
-        var grab by remember { mutableStateOf(Offset.Zero) }
-        val haptic = LocalHapticFeedback.current
         Canvas(
             Modifier.fillMaxSize()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { openPanel() }
@@ -427,22 +598,8 @@ class GameSidebar(private val ctx: Context) {
                             val inward = when (edge) { 0 -> dx; 1 -> -dx; 2 -> dy; else -> -dy }
                             val along = if (edge < 2) abs(dy) else abs(dx)
                             val across = if (edge < 2) abs(dx) else abs(dy)
-                            if (across > along) {
-                                if (inward > 36f) openPanel() else if (inward < -48f) dismiss()
-                            }
+                            if (across > along && inward > 36f) openPanel()
                         }
-                    )
-                }
-                .pointerInput(edge) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            grab = it
-                            dragging = true
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        },
-                        onDrag = { c, _ -> c.consume(); moveBy(c.position.x - grab.x, c.position.y - grab.y) },
-                        onDragEnd = { dock() },
-                        onDragCancel = { dock() }
                     )
                 }
         ) {
@@ -511,6 +668,14 @@ class GameSidebar(private val ctx: Context) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat("Battery", "${s.batt.level}%"); Stat("Down", fmtSpeed(s.netDown)); Stat("Up", fmtSpeed(s.netUp))
             }
+            if (Calls.state == TelephonyManager.CALL_STATE_OFFHOOK) {
+                Text("On a call", color = SbLow, fontSize = 11.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Tool(Icons.Outlined.Speaker, "Speaker", Calls.speaker, Modifier.weight(1f)) { Calls.setSpeaker(ctx, !Calls.speaker) }
+                    Tool(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, "Mute", Calls.muted, Modifier.weight(1f)) { Calls.setMute(ctx, !Calls.muted) }
+                    Tool(Icons.Outlined.CallEnd, "End call", false, Modifier.weight(1f)) { io.launch { Calls.end(ctx) } }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tool(Icons.Outlined.Speed, "Performance", GameUi.perf, Modifier.weight(1f)) { io.launch { GameMode.setPerf(ctx, !GameUi.perf) } }
                 Tool(Icons.Outlined.NotificationsOff, "Do not disturb", GameUi.dnd, Modifier.weight(1f)) { io.launch { GameMode.setDnd(ctx, !GameUi.dnd) } }
@@ -534,7 +699,6 @@ class GameSidebar(private val ctx: Context) {
                         io.launch { delay(700); if (!Recorder.start()) say("Could not start recording") }
                     }
                 }
-                Tool(Icons.Outlined.VisibilityOff, "Hide bar", false, Modifier.weight(1f)) { dismiss() }
             }
             if (shelf.isNotEmpty()) {
                 Text("Open in window", color = SbLow, fontSize = 11.sp)

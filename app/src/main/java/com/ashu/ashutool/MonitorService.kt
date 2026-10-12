@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -34,7 +35,7 @@ class MonitorService : Service() {
     private var watcher: CallWatcher? = null
     private var screenRx: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var games: Set<String> = emptySet()
+    @Volatile private var games: Set<String> = emptySet()
     private var lastNotify = 0L
     private var limitJob: Job? = null
     private var dozeJob: Job? = null
@@ -69,17 +70,28 @@ class MonitorService : Service() {
                 Recorder.sync()
                 games = GameMode.games(this@MonitorService)
                 if (!Guard.safe) { GameMode.recover(this@MonitorService); Firewall.applyAll(this@MonitorService) }
+                handler.post { seedForeground(); reeval() }
             }
             s.launch { Monitor.snap.collect { onSnap(it, nm) } }
             s.launch { snapshotFlow { Recorder.running }.collect { onRecording(it) } }
             s.launch { housekeeping() }
             s.launch { poller() }
+            s.launch { gameWatch() }
         }
         return START_STICKY
     }
 
+    /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition() }
+        handler.postDelayed(fix, 150)
+        handler.postDelayed(fix, 700)
+    }
+
     override fun onDestroy() {
         Fg.listener = null
+        Fg.game = null
         scope?.cancel()
         sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide()
         try { screenRx?.let { unregisterReceiver(it) } } catch (_: Exception) {}
@@ -126,10 +138,19 @@ class MonitorService : Service() {
     // ---- screen on and off
     private fun registerScreen() {
         val rx = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, i: Intent) { if (i.action == Intent.ACTION_SCREEN_OFF) screenOff() else screenOn() }
+            override fun onReceive(c: Context, i: Intent) {
+                when (i.action) {
+                    Intent.ACTION_SCREEN_OFF -> screenOff()
+                    Intent.ACTION_USER_PRESENT -> handler.postDelayed({ reeval() }, 400)
+                    else -> screenOn()
+                }
+            }
         }
         ContextCompat.registerReceiver(
-            this, rx, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) },
+            this, rx,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         screenRx = rx
@@ -154,23 +175,13 @@ class MonitorService : Service() {
         dozeJob?.cancel()
         Monitor.kick(this)
         scope?.launch(Dispatchers.IO) { Saver.screenOn(this@MonitorService) }
+        handler.postDelayed({ reeval() }, 700)
     }
 
     // ---- foreground changes
     private fun onFg(pkg: String) {
         val prev = Fg.prev
-        if (!Guard.safe) {
-            if (pkg in games) {
-                if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(pkg) else sidebar?.hide()
-                if (LockStore.bool(this, "g_auto", true) && GameMode.active != pkg) scope?.launch(Dispatchers.IO) { GameMode.start(this@MonitorService, pkg) }
-            } else if (pkg != packageName) {
-                sidebar?.hide()
-                sidebar?.resetDismiss()
-                if (GameMode.active != null) handler.postDelayed({
-                    if (Fg.pkg !in games && GameMode.active != null) scope?.launch(Dispatchers.IO) { GameMode.stop(this@MonitorService) }
-                }, 8000)
-            }
-        }
+        trackGameSpace(pkg)
         if (prev != null && prev != pkg) {
             if (((BgControl.flags(this)[prev] ?: 0) and 2) != 0) handler.postDelayed({
                 if (Fg.pkg != prev) scope?.launch(Dispatchers.IO) { Apps.forceStop(this@MonitorService, prev) }
@@ -186,6 +197,90 @@ class MonitorService : Service() {
                 AshuAccessibility.instance?.enforceLimit()
             }
         }
+    }
+
+    // ---- game space
+    /** Windows that can sit on top of a game without you having left it: calls, store popups, Google sign-in. */
+    private fun isTransient(pkg: String): Boolean = pkg in Safety.dialerPkgs(this) || pkg in TRANSIENT
+
+    /**
+     * Keeps Fg.game up to date and starts or ends the game tools.
+     * Going to a game: bar on, game mode on. Going to a call or a popup while in a game: nothing changes.
+     * Going anywhere else: bar off, game mode off after a few seconds.
+     */
+    private fun trackGameSpace(pkg: String) {
+        when {
+            pkg in games -> {
+                Fg.game = pkg
+                if (!Guard.safe) enterGame(pkg)
+            }
+            pkg == packageName -> {}
+            Fg.game != null && isTransient(pkg) -> {}
+            else -> {
+                Fg.game = null
+                if (!Guard.safe) leaveGame()
+            }
+        }
+        syncCallUi()
+    }
+
+    private fun enterGame(pkg: String) {
+        if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(pkg) else sidebar?.hide()
+        if (LockStore.bool(this, "g_auto", true) && GameMode.active != pkg) {
+            scope?.launch(Dispatchers.IO) { GameMode.start(this@MonitorService, pkg) }
+        }
+    }
+
+    private fun leaveGame() {
+        sidebar?.hide()
+        if (GameMode.active != null) handler.postDelayed({
+            if (Fg.game == null && GameMode.active != null) scope?.launch(Dispatchers.IO) { GameMode.stop(this@MonitorService) }
+        }, 8000)
+    }
+
+    private fun keyguardLocked(): Boolean =
+        try { getSystemService(KeyguardManager::class.java).isKeyguardLocked } catch (e: Exception) { false }
+
+    /** Puts the bar back if a window event was missed, for example after the screen turned off and on. */
+    private fun reeval() {
+        if (Guard.safe || !Monitor.screenOn || keyguardLocked()) return
+        val p = Fg.pkg
+        if (p != null && p in games && Fg.game != p) { trackGameSpace(p); return }
+        val g = Fg.game
+        if (g == null) {
+            if (sidebar?.isShown == true) sidebar?.hide()
+            return
+        }
+        if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(g) else sidebar?.hide()
+    }
+
+    /** After a restart no window event has arrived yet, so ask the accessibility service what is in front. */
+    private fun seedForeground() {
+        if (Fg.pkg != null) return
+        val p = try { AshuAccessibility.instance?.rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null }
+        if (p != null && p != packageName && p != "com.android.systemui") Fg.set(p)
+    }
+
+    /** Safety net. While you are in a game the bar is checked every two seconds and comes back if it went missing. */
+    private suspend fun gameWatch() {
+        while (currentCoroutineContext().isActive) {
+            if (Monitor.screenOn && Fg.game != null && !Guard.safe) {
+                reeval()
+                delay(2000)
+            } else delay(if (Monitor.screenOn) 4000 else 30_000)
+        }
+    }
+
+    /**
+     * Call banner and floating call controls. By default they only exist while you are in a game.
+     * Anywhere else the normal phone call screen is used.
+     */
+    private fun syncCallUi() {
+        val allowed = Fg.game != null || !LockStore.bool(this, "calls_game_only", true)
+        val ringing = Calls.state == TelephonyManager.CALL_STATE_RINGING
+        val talking = Calls.state == TelephonyManager.CALL_STATE_OFFHOOK
+        if (ringing && allowed && LockStore.bool(this, "calls_banner", true)) banner?.show() else banner?.hide()
+        if (talking && allowed && LockStore.bool(this, "calls_mini", true)) callPill?.show() else callPill?.hide()
     }
 
     /** Only used when the accessibility service is off. Slow and only when something needs it. */
@@ -261,33 +356,30 @@ class MonitorService : Service() {
         Calls.changedAt = SystemClock.elapsedRealtime()
         when (state) {
             TelephonyManager.CALL_STATE_RINGING -> {
-                if (LockStore.bool(this, "calls_banner", true)) banner?.show()
                 if (LockStore.bool(this, "calls_auto", false)) scope?.launch {
                     delay(LockStore.int(this@MonitorService, "calls_auto_sec", 3) * 1000L)
                     if (Calls.state == TelephonyManager.CALL_STATE_RINGING) withContext(Dispatchers.IO) { Calls.answer(this@MonitorService) }
                 }
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
-                banner?.hide()
                 if (prev != TelephonyManager.CALL_STATE_OFFHOOK) {
                     Calls.startedAt = SystemClock.elapsedRealtime()
                     if (LockStore.bool(this, "calls_speaker", false)) scope?.launch { delay(700); Calls.setSpeaker(this@MonitorService, true) }
-                    if (LockStore.bool(this, "calls_mini", true)) callPill?.show()
                 }
             }
             else -> {
-                banner?.hide()
-                callPill?.hide()
                 if (Calls.speakerForced) Calls.setSpeaker(this, false)
                 Calls.muted = false
             }
         }
+        syncCallUi()
     }
 
     companion object {
         const val CHANNEL = "monitor"
         const val ID = 1001
         const val REC_ID = 1002
+        val TRANSIENT = setOf("com.android.vending", "com.google.android.gms", "com.google.android.googlequicksearchbox")
     }
 }
 

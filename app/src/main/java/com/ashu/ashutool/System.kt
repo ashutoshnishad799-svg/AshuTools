@@ -471,12 +471,35 @@ object GameMode {
     @Volatile var active: String? = null
     @Volatile var cached: Set<String> = emptySet()
 
+    /** Popular games that are often installed outside the Play Store, where Android has no game category for them. */
+    private val KNOWN_GAMES = setOf(
+        "com.tencent.ig", "com.pubg.imobile", "com.pubg.krmobile", "com.vng.pubgmobile", "com.rekoo.pubgm",
+        "com.dts.freefireth", "com.dts.freefiremax", "com.activision.callofduty.shooter", "com.garena.game.codm",
+        "com.mobile.legends", "com.miHoYo.GenshinImpact", "com.HoYoverse.hkrpgoversea", "com.roblox.client",
+        "com.mojang.minecraftpe", "com.kiloo.subwaysurf", "com.imangi.templerun2", "com.epicgames.fortnite",
+        "com.levelinfinite.sgameGlobal", "com.proximabeta.mf.uamo", "com.axlebolt.standoff2", "com.innersloth.spacemafia",
+        "com.nianticlabs.pokemongo", "com.ea.gp.apexlegendsmobilefps", "com.tencent.tmgp.cod"
+    )
+
+    private val GAME_PREFIXES = listOf(
+        "com.supercell.", "com.gameloft.", "com.miHoYo.", "com.HoYoverse.", "com.activision.", "com.garena.game.",
+        "com.ea.game.", "com.ea.gp.", "com.king.", "com.zynga.", "com.rovio.", "com.tencent.tmgp.", "com.pubg."
+    )
+
+    /** Everything Ashutool treats as a game: Android's own game flag and category, known titles, and what you added by hand. */
     @Suppress("DEPRECATION")
     fun games(ctx: Context): Set<String> {
         val pm = ctx.packageManager
         val auto = try {
             pm.getInstalledApplications(0)
-                .filter { (it.category == ApplicationInfo.CATEGORY_GAME || (it.flags and ApplicationInfo.FLAG_IS_GAME) != 0) && (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+                .filter { a ->
+                    (a.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && (
+                        a.category == ApplicationInfo.CATEGORY_GAME ||
+                            (a.flags and ApplicationInfo.FLAG_IS_GAME) != 0 ||
+                            a.packageName in KNOWN_GAMES ||
+                            GAME_PREFIXES.any { a.packageName.startsWith(it) }
+                        )
+                }
                 .map { it.packageName }.toSet()
         } catch (e: Exception) { emptySet() }
         val set = (auto + LockStore.set(ctx, "g_added") - LockStore.set(ctx, "g_removed"))
@@ -539,19 +562,30 @@ object GameMode {
         if (LockStore.bool(ctx, "g_kill", false)) Sys.killBackground(ctx, pkg)
         if (LockStore.bool(ctx, "g_perf", true)) setPerf(ctx, true)
         if (LockStore.bool(ctx, "g_dnd", true)) setDnd(ctx, true)
-        if (LockStore.bool(ctx, "g_headsup", true)) Root.ok("settings put global heads_up_notifications_enabled 0")
+        if (LockStore.bool(ctx, "g_headsup", true)) {
+            if (LockStore.str(ctx, "g_prev_heads", "").isEmpty()) {
+                val cur = Root.run("settings get global heads_up_notifications_enabled").firstOrNull()?.trim()
+                LockStore.setStr(ctx, "g_prev_heads", if (cur == "0") "0" else "1")
+            }
+            Root.ok("settings put global heads_up_notifications_enabled 0")
+        }
     }
 
     fun stop(ctx: Context) {
         if (LockStore.str(ctx, "g_prev_gov", "").isNotEmpty()) setPerf(ctx, false)
         if (LockStore.str(ctx, "g_prev_zen", "").isNotEmpty()) setDnd(ctx, false)
-        if (LockStore.bool(ctx, "g_headsup", true)) Root.ok("settings put global heads_up_notifications_enabled 1")
+        val heads = LockStore.str(ctx, "g_prev_heads", "")
+        if (heads.isNotEmpty()) {
+            Root.ok("settings put global heads_up_notifications_enabled ${if (heads == "0") "0" else "1"}")
+            LockStore.setStr(ctx, "g_prev_heads", "")
+        }
         active = null
     }
 
     /** If the app was killed while a game was running, put the phone back to how it was. */
     fun recover(ctx: Context) {
-        if (active == null && (LockStore.str(ctx, "g_prev_gov", "").isNotEmpty() || LockStore.str(ctx, "g_prev_zen", "").isNotEmpty())) {
+        if (active == null && (LockStore.str(ctx, "g_prev_gov", "").isNotEmpty() || LockStore.str(ctx, "g_prev_zen", "").isNotEmpty() ||
+                LockStore.str(ctx, "g_prev_heads", "").isNotEmpty())) {
             stop(ctx)
         }
     }

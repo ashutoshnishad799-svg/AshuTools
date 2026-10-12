@@ -119,7 +119,9 @@ class AshuAccessibility : AccessibilityService() {
         if (pkg !in dialers) lastNonDialer = pkg
         modes(pkg)
         Fg.set(pkg)
-        if (pkg in dialers && LockStore.bool(this, "calls_nofull", false) && Calls.recentActive()) { restorePrev(); return }
+        if (pkg in dialers && LockStore.bool(this, "calls_nofull", false) && Calls.recentActive() &&
+            (Fg.game != null || !LockStore.bool(this, "calls_game_only", true))
+        ) { restorePrev(); return }
         val needLock = LockStore.hasCred(this) && pkg in LockStore.locked(this) && !Safety.lockForbidden(this, pkg) && LockStore.unlocked != pkg
         if (needLock) showLock(pkg)
         else {
@@ -131,7 +133,7 @@ class AshuAccessibility : AccessibilityService() {
 
     /** Keeps the app you were using in front when a call rings, so the call shows as a banner instead. */
     private fun restorePrev() {
-        val p = lastNonDialer
+        val p = Fg.game ?: lastNonDialer
         val i = if (p != null) packageManager.getLaunchIntentForPackage(p) else null
         if (i != null) startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         else performGlobalAction(GLOBAL_ACTION_HOME)
