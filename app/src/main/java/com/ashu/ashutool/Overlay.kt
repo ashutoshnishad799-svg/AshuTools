@@ -242,6 +242,9 @@ class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwne
 
     val isShown: Boolean get() = view != null
 
+    /** Why the last attempt to add the window failed, empty if it worked. */
+    @Volatile var lastError: String = ""
+
     /** Measured size of the window in pixels. Zero until the first layout has happened. */
     fun size(): Pair<Int, Int> = (view?.width ?: 0) to (view?.height ?: 0)
 
@@ -277,7 +280,9 @@ class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwne
         try {
             wm.addView(frame, params)
             view = frame
+            lastError = ""
         } catch (e: Exception) {
+            lastError = "${e.javaClass.simpleName}: ${e.message ?: ""}".take(160)
             registry.currentState = Lifecycle.State.CREATED
         }
     }
@@ -405,6 +410,9 @@ class GameSidebar(private val ctx: Context) {
     private var pos by mutableIntStateOf(50)
 
     val isShown: Boolean get() = overlay.isShown
+
+    /** Why the bar could not be added, empty if it is fine. */
+    val error: String get() = overlay.lastError
 
     private val dragSpec = DragSpec(
         longPress = true,

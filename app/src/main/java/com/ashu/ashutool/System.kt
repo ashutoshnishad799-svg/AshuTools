@@ -481,6 +481,9 @@ object GameMode {
         "com.nianticlabs.pokemongo", "com.ea.gp.apexlegendsmobilefps", "com.tencent.tmgp.cod"
     )
 
+    /** SCREEN_ORIENTATION_LANDSCAPE, REVERSE_LANDSCAPE, SENSOR_LANDSCAPE and USER_LANDSCAPE. */
+    private val LANDSCAPE_MODES = setOf(0, 8, 6, 11)
+
     private val GAME_PREFIXES = listOf(
         "com.supercell.", "com.gameloft.", "com.miHoYo.", "com.HoYoverse.", "com.activision.", "com.garena.game.",
         "com.ea.game.", "com.ea.gp.", "com.king.", "com.zynga.", "com.rovio.", "com.tencent.tmgp.", "com.pubg."
@@ -502,7 +505,20 @@ object GameMode {
                 }
                 .map { it.packageName }.toSet()
         } catch (e: Exception) { emptySet() }
-        val set = (auto + LockStore.set(ctx, "g_added") - LockStore.set(ctx, "g_removed"))
+        // Sideloaded games often carry no category. A launcher screen that is locked to landscape and has no
+        // category is almost always a game, so those count too. Anything wrong can be removed by hand.
+        val landscape = try {
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            pm.queryIntentActivities(main, 0)
+                .filter { it.activityInfo.screenOrientation in LANDSCAPE_MODES }
+                .map { it.activityInfo.packageName }.toSet()
+        } catch (e: Exception) { emptySet<String>() }
+        val guessed = try {
+            pm.getInstalledApplications(0)
+                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.category == ApplicationInfo.CATEGORY_UNDEFINED && it.packageName in landscape }
+                .map { it.packageName }.toSet()
+        } catch (e: Exception) { emptySet<String>() }
+        val set = (auto + guessed + LockStore.set(ctx, "g_added") - LockStore.set(ctx, "g_removed"))
             .filter { it != ctx.packageName && Safety.validPkg(it) }.toSet()
         cached = set
         return set

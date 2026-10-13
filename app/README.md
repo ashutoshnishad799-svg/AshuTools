@@ -18,7 +18,10 @@ Bigger tabs have sub pages:
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   floating windows and app shelf, screen recording with a draggable timer pill and a notification Stop button.
   The bar shows in every game and stays there: it comes back after a call, a store popup, screen off and on, or a rotation.
-  Games are found by Android's game flag and category, a list of known titles, and what you add yourself under Add or remove.
+  Games are found by Android's game flag and category, a list of known titles, landscape-only apps with no category,
+  and what you add yourself under Add or remove. A window from the phone's own game assistant never counts as leaving the game.
+  The Games page has a Game bar check card: service, overlay permission, how the open app is detected, the last error,
+  a Test bar button, and a one tap Mark as game for apps you opened recently.
 - Calls: compact incoming banner, keep your game in front, auto answer, auto speaker, floating end / speaker / mute controls.
   Banner and floating controls are for game space only (switch: Only while gaming). The pill moves with your finger on the raw screen
   position and always stays on screen. Speaker, mute and end are also in the sidebar panel during a call.

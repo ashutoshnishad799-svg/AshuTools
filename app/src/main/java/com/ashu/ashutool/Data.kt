@@ -36,13 +36,26 @@ object Fg {
     @Volatile var game: String? = null
     @Volatile var listener: ((String) -> Unit)? = null
 
+    private val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    /** The last few different apps that came to the front, newest first. The Games page uses it to mark a game by hand. */
+    fun recent(): List<String> = seen.toList()
+
     /** Records a new foreground app and tells the listener, only when it actually changed. */
     fun set(p: String) {
         if (p == pkg) return
         prev = pkg
         pkg = p
+        seen.remove(p)
+        seen.add(0, p)
+        while (seen.size > 12) seen.removeAt(seen.size - 1)
         listener?.invoke(p)
     }
+}
+
+/** What the game bar last ran into. Shown on the Games page so a missing bar can be explained. */
+object GameDiag {
+    @Volatile var error: String = ""
 }
 
 /** Set when the service restarted several times in a row. Risky auto features pause until the user resumes. */
@@ -189,6 +202,19 @@ object Usage {
     }
 
     fun todayMs(ctx: Context, pkg: String): Long = todayAll(ctx)[pkg] ?: 0L
+
+    /**
+     * Foreground app read with root. Used only when neither the accessibility service nor usage access is available.
+     * Reads the resumed activity from the activity manager, which works on every Android version from 8 up.
+     */
+    fun topByRoot(): String? {
+        val re = Regex("""\bu\d+\s+([A-Za-z0-9_.]+)/""")
+        for (line in Root.run("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | head -n 3")) {
+            val m = re.find(line) ?: continue
+            return m.groupValues[1]
+        }
+        return null
+    }
 
     /** Last app that came to the foreground in the past 15 seconds, or null if nothing changed. */
     @Suppress("DEPRECATION")

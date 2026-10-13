@@ -35,7 +35,8 @@ class MonitorService : Service() {
     private var watcher: CallWatcher? = null
     private var screenRx: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
-    @Volatile private var games: Set<String> = emptySet()
+    /** Always the newest list. A game added on the Games page counts straight away. */
+    private val games: Set<String> get() = GameMode.cached
     private var lastNotify = 0L
     private var limitJob: Job? = null
     private var dozeJob: Job? = null
@@ -43,7 +44,24 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** For the Games page: is the bar window on screen right now, and if not, why. */
+    fun barShown(): Boolean = sidebar?.isShown == true
+    fun barError(): String = sidebar?.error ?: ""
+
+    /** Checks again right now, for example after a game was added by hand. */
+    fun recheck() { handler.post { reeval() } }
+
+    /** Shows the bar for a few seconds to prove the window itself works. Returns an empty text on success, else the reason. */
+    fun testBar(): String {
+        val sb = sidebar ?: return "The service is not ready yet"
+        sb.hide()
+        sb.showFor(packageName)
+        handler.postDelayed({ if (Fg.game == null) sb.hide() }, 6000)
+        return if (sb.isShown) "" else sb.error.ifEmpty { "The window could not be added" }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        instance = this
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Live monitor", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
         nm.createNotificationChannel(NotificationChannel("record", "Screen recording", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
@@ -68,7 +86,7 @@ class MonitorService : Service() {
                 Charge.recover(this@MonitorService)
                 Saver.restoreCpu(this@MonitorService)
                 Recorder.sync()
-                games = GameMode.games(this@MonitorService)
+                GameMode.games(this@MonitorService)
                 if (!Guard.safe) { GameMode.recover(this@MonitorService); Firewall.applyAll(this@MonitorService) }
                 handler.post { seedForeground(); reeval() }
             }
@@ -90,6 +108,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        instance = null
         Fg.listener = null
         Fg.game = null
         scope?.cancel()
@@ -209,18 +228,45 @@ class MonitorService : Service() {
      * Going anywhere else: bar off, game mode off after a few seconds.
      */
     private fun trackGameSpace(pkg: String) {
-        when {
-            pkg in games -> {
-                Fg.game = pkg
-                if (!Guard.safe) enterGame(pkg)
+        try {
+            val cur = Fg.game
+            when {
+                pkg in games -> {
+                    Fg.game = pkg
+                    if (!Guard.safe) enterGame(pkg)
+                }
+                pkg == packageName -> {}
+                cur != null && isTransient(pkg) -> {}
+                cur != null -> verifyLeave(cur, pkg)
+                else -> if (!Guard.safe) leaveGame()
             }
-            pkg == packageName -> {}
-            Fg.game != null && isTransient(pkg) -> {}
-            else -> {
-                Fg.game = null
-                if (!Guard.safe) leaveGame()
-            }
+            syncCallUi()
+        } catch (e: Exception) {
+            GameDiag.error = "${e.javaClass.simpleName}: ${e.message ?: ""}".take(160)
         }
+    }
+
+    /**
+     * Another window came up while you were in a game. Many phones show their own game assistant or a popup
+     * on top of a game, and that is not leaving it. So before the bar is taken away, check what really came
+     * to the front. Only a real switch to another app ends game space.
+     */
+    private fun verifyLeave(game: String, pkg: String) {
+        scope?.launch(Dispatchers.IO) {
+            delay(900)
+            val usage = Usage.hasAccess(this@MonitorService)
+            val top = if (usage) Usage.foreground(this@MonitorService) else Usage.topByRoot()
+            withContext(Dispatchers.Main) { finishLeave(game, pkg, usage, top) }
+        }
+    }
+
+    private fun finishLeave(game: String, pkg: String, usage: Boolean, top: String?) {
+        if (Fg.game != game || Fg.pkg != pkg) return
+        // With usage access, no recent change means nothing replaced the game. Without it, trust the window event.
+        val stay = if (usage) (top == null || top == game || skipFg(top) || isTransient(top)) else (top == game)
+        if (stay) return
+        Fg.game = null
+        if (!Guard.safe) leaveGame()
         syncCallUi()
     }
 
@@ -283,15 +329,27 @@ class MonitorService : Service() {
         if (talking && allowed && LockStore.bool(this, "calls_mini", true)) callPill?.show() else callPill?.hide()
     }
 
-    /** Only used when the accessibility service is off. Slow and only when something needs it. */
+    private fun skipFg(p: String) = p == "com.android.systemui" || p == "android" || p.endsWith("permissioncontroller")
+
+    /**
+     * Second way of seeing which app is open.
+     * Accessibility off: usage access is read every 1.5 s, and root is used if usage access is missing too.
+     * Accessibility on: only a light backup that catches a game window the accessibility service did not report.
+     */
     private suspend fun poller() {
         while (currentCoroutineContext().isActive) {
-            if (Monitor.screenOn && !AshuAccessibility.connected && Usage.hasAccess(this) &&
-                (LockStore.locked(this).isNotEmpty() || games.isNotEmpty() || Limits.all(this).isNotEmpty())
-            ) {
-                val fg = withContext(Dispatchers.IO) { Usage.foreground(this@MonitorService) }
-                if (fg != null) { Fg.set(fg); pollLock(fg) }
+            val a11y = AshuAccessibility.connected
+            val need = LockStore.locked(this).isNotEmpty() || games.isNotEmpty() || Limits.all(this).isNotEmpty()
+            if (Monitor.screenOn && need && !a11y) {
+                val fg = withContext(Dispatchers.IO) {
+                    Usage.foreground(this@MonitorService) ?: if (!Usage.hasAccess(this@MonitorService)) Usage.topByRoot() else null
+                }
+                if (fg != null && !skipFg(fg)) { Fg.set(fg); pollLock(fg) }
                 delay(1500)
+            } else if (Monitor.screenOn && a11y && games.isNotEmpty() && Fg.game == null) {
+                val fg = withContext(Dispatchers.IO) { Usage.foreground(this@MonitorService) }
+                if (fg != null && fg in games) Fg.set(fg)
+                delay(3000)
             } else delay(if (Monitor.screenOn) 10_000 else 60_000)
         }
     }
@@ -317,7 +375,7 @@ class MonitorService : Service() {
             val wanted = LockStore.bool(this, "cl_on", false) || LockStore.bool(this, "cl_manual", false) || LockStore.bool(this, "cl_temp_on", false) || Charge.off
             if (!Guard.safe && wanted) withContext(Dispatchers.IO) { Charge.enforce(this@MonitorService, Monitor.snap.value) }
             tryWatch()
-            if (n % 10 == 0) games = withContext(Dispatchers.IO) { GameMode.games(this@MonitorService) }
+            if (n % 10 == 0) withContext(Dispatchers.IO) { GameMode.games(this@MonitorService) }
         }
     }
 
@@ -379,6 +437,7 @@ class MonitorService : Service() {
         const val CHANNEL = "monitor"
         const val ID = 1001
         const val REC_ID = 1002
+        @Volatile var instance: MonitorService? = null
         val TRANSIENT = setOf("com.android.vending", "com.google.android.gms", "com.google.android.googlequicksearchbox")
     }
 }

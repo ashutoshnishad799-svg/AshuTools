@@ -155,25 +155,75 @@ private fun GamesMain(open: (String) -> Unit) {
 
     var overlayOk by remember { mutableStateOf(Settings.canDrawOverlays(ctx)) }
     var usageOk by remember { mutableStateOf(Usage.hasAccess(ctx)) }
+    var rootOk by remember { mutableStateOf(false) }
+    var tick by remember { mutableIntStateOf(0) }
     val a11yOk = AshuAccessibility.connected
-    val missing = !overlayOk || !(a11yOk || usageOk) || Guard.safe
+    LaunchedEffect(Unit) {
+        rootOk = withContext(Dispatchers.IO) { Root.isGranted() }
+        while (true) { delay(1000); tick++ }
+    }
 
     Page("Game launcher", "Boost, sidebar and quick launch", GTeal, Icons.Outlined.SportsEsports) {
-        if (missing) item {
+        item {
+            val t = tick
+            val svc = MonitorService.instance
+            val last = Fg.pkg
+            val shown = t >= 0 && svc?.barShown() == true
+            val err = (svc?.barError() ?: "").ifEmpty { GameDiag.error }
+            val recent = Fg.recent().filter {
+                it != ctx.packageName && it !in games && it != "com.android.systemui" && it !in Safety.homePkgs(ctx) && Safety.validPkg(it)
+            }.take(4)
             Glass {
-                Text("The game bar needs these", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Game bar check", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
+                StatusRow("Ashutool service running", svc != null)
                 StatusRow("Draw over other apps", overlayOk)
-                StatusRow("Sees which game is open", a11yOk || usageOk)
+                StatusRow("Sees which app is open", a11yOk || usageOk || rootOk)
                 StatusRow("Safe mode off", !Guard.safe)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Last app seen: ${last ?: "none yet"}${if (last != null && last in games) "  (game)" else ""}",
+                    color = TextLo, fontSize = 12.sp
+                )
+                Text(if (shown) "The bar is on screen right now" else "The bar is not on screen right now", color = TextLo, fontSize = 12.sp)
+                if (err.isNotEmpty()) Text("Error: $err", color = Danger, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
-                GradButton(if (Guard.safe) "Resume and fix with root" else "Fix with root", GTeal, Icons.Outlined.Build) {
-                    scope.launch {
-                        if (Guard.safe) { Guard.safe = false; LockStore.setStr(ctx, "starts", "") }
-                        withContext(Dispatchers.IO) { Root.bootstrap(ctx) }
-                        overlayOk = Settings.canDrawOverlays(ctx)
-                        usageOk = Usage.hasAccess(ctx)
-                        toast(ctx, "Permissions refreshed")
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GradButton("Test bar", GTeal, Icons.Outlined.Widgets) {
+                        val r = MonitorService.instance?.testBar() ?: "The service is not running. Tap Fix with root"
+                        toast(ctx, if (r.isEmpty()) "Bar shown for 6 seconds" else r)
+                    }
+                    GradButton("Fix with root", GBlue, Icons.Outlined.Build) {
+                        scope.launch {
+                            if (Guard.safe) { Guard.safe = false; LockStore.setStr(ctx, "starts", "") }
+                            withContext(Dispatchers.IO) { Root.bootstrap(ctx) }
+                            androidx.core.content.ContextCompat.startForegroundService(ctx, Intent(ctx, MonitorService::class.java))
+                            overlayOk = Settings.canDrawOverlays(ctx)
+                            usageOk = Usage.hasAccess(ctx)
+                            rootOk = withContext(Dispatchers.IO) { Root.isGranted() }
+                            toast(ctx, "Checked again")
+                        }
+                    }
+                }
+                if (recent.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Game not detected? Open it for a moment, come back here and mark it:", color = TextLo, fontSize = 12.sp)
+                    recent.forEach { p ->
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AppIcon(p, 32.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(p, 0)).toString() } catch (e: Exception) { p },
+                                color = TextHi, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                            )
+                            GlassButton(Icons.Outlined.SportsEsports, "Mark as game") {
+                                scope.launch {
+                                    games = withContext(Dispatchers.IO) { GameMode.setGame(ctx, p, true); GameMode.cached }
+                                    MonitorService.instance?.recheck()
+                                    toast(ctx, "Added. The bar will show in it now")
+                                }
+                            }
+                        }
                     }
                 }
             }
