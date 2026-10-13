@@ -202,6 +202,17 @@ object Monitor {
         return ((1f - awake / total) * 100f).toInt().coerceIn(0, 100)
     }
 
+    /** Zones that report battery current, voltage or charge level instead of a temperature. */
+    private val NOT_A_TEMP = Regex("ibat|vbat|bcl|socd|lvl", RegexOption.IGNORE_CASE)
+    private val CPU_LIKE = Regex("cpu|soc|tsens|cluster|big|little", RegexOption.IGNORE_CASE)
+
+    /** Thermal zones report in thousandths of a degree, tenths of a degree, or whole degrees depending on the chip. */
+    private fun celsius(raw: Long): Float = when {
+        raw >= 1000 -> raw / 1000f
+        raw in 150L..999L -> raw / 10f
+        else -> raw.toFloat()
+    }
+
     private fun sample(ctx: Context, old: Snap): Snap {
         // Two processes per sample: one grep for every small file, one for the CPU totals line.
         val lines = Root.run(
@@ -254,15 +265,19 @@ object Monitor {
         }
         val gov = kv["$base/cpu0/cpufreq/scaling_governor"] ?: old.gov
 
-        // Thermal: prefer a zone that looks like CPU or SoC
+        // Thermal. Some "thermal zones" are not temperatures at all: battery current levels, battery charge level
+        // and similar virtual zones. They are skipped. Some sensors report in tenths of a degree (398 means 39.8).
         val zones = kv.keys.filter { it.contains("thermal_zone") && it.endsWith("/type") }.mapNotNull { k ->
-            val t = kv[k.removeSuffix("/type") + "/temp"]?.toLongOrNull() ?: return@mapNotNull null
-            if (t > 0) Pair(kv[k] ?: "", t) else null
+            val name = kv[k] ?: ""
+            if (NOT_A_TEMP.containsMatchIn(name)) return@mapNotNull null
+            val raw = kv[k.removeSuffix("/type") + "/temp"]?.toLongOrNull() ?: return@mapNotNull null
+            val c = celsius(raw)
+            if (c > 0f && c <= 150f) Pair(name, c) else null
         }
-        val pick = zones.firstOrNull { Regex("cpu|soc|tsens|cluster|big|little", RegexOption.IGNORE_CASE).containsMatchIn(it.first) }
-            ?: zones.firstOrNull()
-        val cpuTemp = pick?.second?.let { if (it > 1000) it / 1000f else it.toFloat() } ?: old.cpuTemp
-        val zoneList = zones.map { (n, t) -> n to (if (t > 1000) t / 1000f else t.toFloat()) }.sortedByDescending { it.second }
+        // The hottest CPU or SoC sensor is the one that matters for throttling
+        val pick = zones.filter { CPU_LIKE.containsMatchIn(it.first) }.maxByOrNull { it.second } ?: zones.firstOrNull()
+        val cpuTemp = pick?.second ?: old.cpuTemp
+        val zoneList = zones.sortedByDescending { it.second }
 
         // RAM
         val am = ctx.getSystemService(ActivityManager::class.java)
