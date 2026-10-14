@@ -1,8 +1,19 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 @file:OptIn(ExperimentalLayoutApi::class)
 
 package com.ashu.ashutool
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.Canvas
@@ -449,12 +460,41 @@ fun SettingsPage() = SubHost(
 
 @Composable
 private fun SettingsMain(open: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     Page("Settings", "Look, permissions and safety", GCyan, Icons.Outlined.Settings) {
         item { NavRow(Icons.Outlined.ColorLens, GViolet, "Appearance", "Themes, glass strength, animation") { open("look") } }
         item { NavRow(Icons.Outlined.AdminPanelSettings, GCyan, "Permissions", "Root, instant lock, usage, overlay, calls") { open("perm") } }
         item { NavRow(Icons.Outlined.Shield, GGreen, "Safety", "Safe mode, firewall, protections") { open("safe") } }
         item { NavRow(Icons.Outlined.Terminal, GBlue, "Action log", "Every change made as root") { open("log") } }
-        item { NavRow(Icons.Outlined.Info, GPink, "About Ashutool", "Version and developer") { open("about") } }
+        item { NavRow(Icons.Outlined.Info, GPink, "About Ashutool", "Version, developer and licence") { open("about") } }
+        item {
+            Glass {
+                Text("Backup and restore", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Saves your settings to ${Backup.PATH}. Passwords, PINs and the vault code are never included.",
+                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GradButton("Export", GTeal, Icons.Outlined.Save) {
+                        scope.launch {
+                            val n = withContext(Dispatchers.IO) { Backup.export(ctx) }
+                            toast(ctx, if (n >= 0) "Saved $n settings" else "Could not save. Is root granted?")
+                        }
+                    }
+                    GradButton("Import", GBlue, Icons.Outlined.Restore) {
+                        scope.launch {
+                            val n = withContext(Dispatchers.IO) { Backup.import(ctx) }
+                            if (n >= 0) {
+                                Palette.load(ctx)
+                                toast(ctx, "Restored $n settings. Restart the app to apply everything")
+                            } else toast(ctx, "No backup file found")
+                        }
+                    }
+                }
+            }
+        }
+        item { CreditFooter() }
     }
 }
 
@@ -520,7 +560,7 @@ private fun LookSub(back: () -> Unit) {
     fun pick(i: Int) { Palette.auto = false; Palette.mode = i; LockStore.setBool(ctx, "theme_auto", false); LockStore.setInt(ctx, "theme", i) }
     Page("Appearance", Palette.cur.name, GViolet, Icons.Outlined.ColorLens, onBack = back) {
         item {
-            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Slate in dark mode, Slate light in light mode", Palette.auto) {
+            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Nebula in dark mode, Nebula light in light mode", Palette.auto) {
                 Palette.auto = it
                 LockStore.setBool(ctx, "theme_auto", it)
             }
@@ -653,21 +693,38 @@ private fun LogSub(back: () -> Unit) {
 }
 
 @Composable
+private fun LicenseRow(name: String, licence: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(name, color = TextHi, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        Text(licence, color = TextLo, fontSize = 12.sp)
+    }
+}
+
+@Composable
 private fun AboutSub(back: () -> Unit) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var taps by remember { mutableIntStateOf(0) }
-    fun open(url: String) {
-        try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-        catch (e: Exception) { toast(ctx, "No app can open this link") }
+    var crash by remember { mutableStateOf(CrashLog.last(ctx)) }
+    val verdict = remember { Integrity.verdict(ctx) }
+    fun copy(text: String, msg: String) {
+        ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(Credits.APP, text))
+        toast(ctx, msg)
     }
-    Page("About Ashutool", "Version 1.1", GCyan, Icons.Outlined.Info, onBack = back) {
+    Page("About ${Credits.APP}", "Version ${BuildConfig.VERSION_NAME}", GCyan, Icons.Outlined.Info, onBack = back) {
         item {
             Glass {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.bounceClick { taps++; if (taps == 7) toast(ctx, "Hidden button unlocked") }) { GradIcon(Icons.Outlined.Bolt, GTeal, 72.dp) }
                     Spacer(Modifier.height(10.dp))
-                    GradText("Ashutool", GTeal, 26.sp)
+                    GradText(Credits.APP, GTeal, 26.sp)
                     Text("Root toolkit for custom ROMs", color = TextLo, fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        Integrity.label(ctx),
+                        color = if (verdict == Integrity.Verdict.OFFICIAL) Accent else Warn,
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -677,23 +734,67 @@ private fun AboutSub(back: () -> Unit) {
                     GradIcon(Icons.Outlined.Person, GViolet, 48.dp)
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text("Ashutosh", color = TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text("@ashutosh_07x on Telegram and Instagram", color = TextLo, fontSize = 12.sp)
+                        Text(Credits.AUTHOR, color = TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("Developer  \u00B7  ${Credits.TELEGRAM} on Telegram and Instagram", color = TextLo, fontSize = 12.sp)
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                GradButton("Message on Telegram", GTeal, Icons.Outlined.ChatBubbleOutline) { open("https://t.me/ashutosh_07x") }
+                GradButton("Message on Telegram", GTeal, Icons.Outlined.ChatBubbleOutline) { openLink(ctx, Credits.TELEGRAM_URL) }
                 Spacer(Modifier.height(10.dp))
-                GlassButton(Icons.Outlined.CameraAlt, "Instagram @ashutosh_07x") { open("https://www.instagram.com/ashutosh_07x") }
+                GlassButton(Icons.Outlined.CameraAlt, "Instagram ${Credits.TELEGRAM}") { openLink(ctx, Credits.INSTAGRAM_URL) }
+            }
+        }
+        item {
+            Glass {
+                Text("Licence", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${Credits.APP} is free and open source software, ${Credits.LICENSE}. Copyright ${Credits.YEAR} ${Credits.AUTHOR}. " +
+                        "You may use, study, change and share it. Any copy or modified version must stay open source under the same licence " +
+                        "and must keep this author credit and the Telegram id ${Credits.TELEGRAM}. Read the LICENSE and NOTICE files in the source.",
+                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+        item {
+            Glass {
+                Text("Open source libraries", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                LicenseRow("Jetpack Compose and AndroidX", "Apache 2.0")
+                LicenseRow("Material icons", "Apache 2.0")
+                LicenseRow("Kotlin and kotlinx.coroutines", "Apache 2.0")
+                LicenseRow("libsu by topjohnwu", "Apache 2.0")
+            }
+        }
+        item {
+            Glass {
+                Text("Help and bug reports", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Copy this and send it with your report. It has no personal data.",
+                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
+                )
+                GlassButton(Icons.Outlined.ContentCopy, "Copy debug info") {
+                    scope.launch {
+                        val root = withContext(Dispatchers.IO) { Root.isGranted() }
+                        copy(CrashLog.debugInfo(ctx, root), "Debug info copied")
+                    }
+                }
+                val c = crash
+                if (c != null) {
+                    Spacer(Modifier.height(10.dp))
+                    GlassButton(Icons.Outlined.BugReport, "Copy last crash") { copy(c, "Crash log copied") }
+                    Spacer(Modifier.height(10.dp))
+                    GlassButton(Icons.Outlined.Delete, "Clear crash log") { CrashLog.clear(ctx); crash = null }
+                }
             }
         }
         if (taps >= 7) item {
             Glass {
                 Text("Hidden button", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text("You found it. Send feedback or ideas straight to the developer.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-                GradButton("Say hi to Ashutosh", GPink) { open("https://t.me/ashutosh_07x") }
+                GradButton("Say hi to ${Credits.AUTHOR.substringBefore(' ')}", GPink) { openLink(ctx, Credits.TELEGRAM_URL) }
             }
         }
-        item { Glass { Hint("Ashutool covers CPU, memory, battery, charging, thermal, app control, lock, hide, network, games, calls and more, all with root.") } }
+        item { Glass { Hint("${Credits.APP} covers CPU, memory, battery, charging, thermal, app control, lock, hide, network, games, calls and more, all with root.") } }
+        item { CreditFooter() }
     }
 }

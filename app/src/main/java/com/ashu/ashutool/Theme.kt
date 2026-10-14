@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.content.Context
@@ -99,17 +108,26 @@ object Palette {
             Grad(c(0xFF0EA5E9), c(0xFF6366F1)), Grad(c(0xFF64748B), c(0xFF0EA5E9)), 0.10f, 0.04f, 0.26f, 0.06f, 0.14f, true),
         Pal("Glass black", true, false, c(0xFFFFFFFF), c(0xFFA1A1AA), c(0xFF0A0A0F), c(0xFF7DF9FF),
             c(0xFF000000), c(0xFF05060A), c(0xFF000000), c(0xFF6366F1), c(0xFF22D3EE), c(0xFFFFFFFF), 0.20f,
-            Grad(c(0xFF7DF9FF), c(0xFFA78BFA)), Grad(c(0xFFFFFFFF), c(0xFF7DF9FF)), 0.13f, 0.04f, 0.55f, 0.06f, 0.32f, true)
+            Grad(c(0xFF7DF9FF), c(0xFFA78BFA)), Grad(c(0xFFFFFFFF), c(0xFF7DF9FF)), 0.13f, 0.04f, 0.55f, 0.06f, 0.32f, true),
+        // The default look: deep violet and indigo with soft pink and blue light behind frosted glass
+        Pal("Nebula", true, false, c(0xFFF6F3FF), c(0xFFAAA4CC), c(0xFF1A1433), c(0xFFA78BFA),
+            c(0xFF08060F), c(0xFF140D2B), c(0xFF0A1128), c(0xFF8B5CF6), c(0xFFEC4899), c(0xFF3B82F6), 0.44f,
+            Grad(c(0xFFA78BFA), c(0xFF60A5FA)), Grad(c(0xFFF472B6), c(0xFFA78BFA)), 0.17f, 0.06f, 0.46f, 0.06f, 0.26f, true),
+        Pal("Nebula light", false, false, c(0xFF1E1B4B), c(0xFF5B5780), c(0xFFFFFFFF), c(0xFF7C3AED),
+            c(0xFFF6F3FF), c(0xFFEDE7FF), c(0xFFEAF2FF), c(0xFFA78BFA), c(0xFFF9A8D4), c(0xFF93C5FD), 0.45f,
+            Grad(c(0xFF8B5CF6), c(0xFF3B82F6)), Grad(c(0xFFEC4899), c(0xFF8B5CF6)), 0.10f, 0.04f, 0.26f, 0.06f, 0.14f, true)
     )
 
-    /** Index of the theme used when following the system. */
+    /** Themes used when following the system. Slate is the older default and is still in the list. */
     const val SLATE = 12
     const val SLATE_LIGHT = 13
+    const val NEBULA = 15
+    const val NEBULA_LIGHT = 16
 
-    val cur: Pal get() = if (auto) themes[if (systemDark) SLATE else SLATE_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
+    val cur: Pal get() = if (auto) themes[if (systemDark) NEBULA else NEBULA_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
 
     fun load(ctx: Context) {
-        mode = LockStore.int(ctx, "theme", SLATE).coerceIn(0, themes.size - 1)
+        mode = LockStore.int(ctx, "theme", NEBULA).coerceIn(0, themes.size - 1)
         auto = LockStore.bool(ctx, "theme_auto", true)
         systemDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         animated = LockStore.bool(ctx, "anim_bg", false)

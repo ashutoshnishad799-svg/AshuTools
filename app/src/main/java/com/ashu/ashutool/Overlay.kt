@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.content.Context
@@ -520,6 +529,7 @@ class GameSidebar(private val ctx: Context) {
             expanded = false
             open = false
             closing = false
+            Monitor.boost = false
             showHandle()
         } else refresh()
     }
@@ -528,6 +538,7 @@ class GameSidebar(private val ctx: Context) {
         alive = false
         open = false
         expanded = false
+        Monitor.boost = false
         closing = false
         dragging = false
         overlay.remove()
@@ -537,6 +548,8 @@ class GameSidebar(private val ctx: Context) {
         if (!alive || expanded) return
         expanded = true
         open = false
+        Monitor.boost = true
+        Monitor.kick(ctx)
         overlay.show(panelParams(), { closePanel() }) { Content() }
         handler.post { open = true }
     }
@@ -547,6 +560,7 @@ class GameSidebar(private val ctx: Context) {
         open = false
         handler.postDelayed({
             closing = false
+            Monitor.boost = false
             if (!alive) return@postDelayed
             expanded = false
             showHandle()
@@ -715,7 +729,10 @@ class GameSidebar(private val ctx: Context) {
                         Column(
                             Modifier.clickable {
                                 closePanel()
-                                io.launch { say(if (Windows.open(ctx, p, LockStore.bool(ctx, "g_float", true))) "Opening" else "Could not open") }
+                                io.launch {
+                                    val ok = if (LockStore.bool(ctx, "g_float", true)) FloatWindows.open(ctx, p) else Windows.open(ctx, p, false)
+                                    say(if (!ok) "Could not open" else FloatWindows.note.ifEmpty { "Opening" })
+                                }
                             },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -733,6 +750,11 @@ class GameSidebar(private val ctx: Context) {
                 vol = it
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
             }
+            Text(
+                "${Credits.APP}  \u00B7  ${Credits.AUTHOR}  \u00B7  ${Credits.TELEGRAM}",
+                color = SbLow, fontSize = 10.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 

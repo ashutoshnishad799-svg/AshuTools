@@ -1,46 +1,63 @@
 # Ashutool
 
-Root toolkit for custom ROMs. Kotlin, Jetpack Compose, libsu.
-Glass UI with 12 themes and a bottom bar you swipe left and right. Line icons only, no emoji.
+**Root toolkit for custom ROMs.** CPU, memory, battery, charging, thermal, app control, app lock, hide, network,
+games, calls and more, in one app with a glass look.
+
+Made by **Ashutosh Nishad** - Telegram [@ashutosh_07x](https://t.me/ashutosh_07x)
+
+Free and open source, GNU GPL v3.0 or later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+## What it does
+- **Monitor:** live CPU, memory, battery, thermal and network numbers, history graphs, app heat.
+- **Control:** CPU governor and frequency, memory and swap, charging limit, app standby and background rules.
+- **Apps:** app limits, reels blocker, app lock with PIN or pattern, hidden apps vault, firewall.
+- **Games:** game launcher, edge game bar, game mode (performance, do not disturb, no heads-up), screen recording,
+  floating app windows with a title bar (move, resize, full screen, close).
+- **Calls:** compact call banner and floating call controls while you play.
+- **Looks:** 17 themes, Nebula by default, glass strength, optional animated background.
+- **Backup:** export and import your settings.
+
+More detail is in [app/README.md](app/README.md).
+
+## Requirements
+- Android 8.0 or newer, rooted (Magisk or KernelSU). Floating windows need a ROM with freeform window support.
+- No internet permission. Ashutool does not send any data anywhere.
+
+## Install
+Download the APK from the Releases page, install it, open it and grant root. Ashutool then grants itself the
+other permissions through root. If something is missing, Settings, Permissions shows what and fixes it.
 
 ## Build
-1. Open this folder in Android Studio (Koala or newer, JDK 17). Let Gradle sync.
-2. Run on a rooted device and allow the root prompt.
-3. On first launch Ashutool grants itself usage access, overlay, notifications, battery whitelist
-   and turns on the instant-lock accessibility service through root.
+```
+gradle assembleRelease
+```
+Needs JDK 17 and Gradle 8.7 (the GitHub Actions workflow does exactly this). Without a signing key the release APK
+is signed with the debug key, so it installs and runs as a *community build*.
 
-## Tabs (bottom bar, swipe to scroll)
-Home, Games, CPU, Memory, Battery, Charging, Thermal, App heat, Usage, Apps, Lock, Hide,
-Network, Tasks, Alerts, Display, Storage, Power, Device, Settings.
+### Official signed release (maintainer)
+1. Make a keystore once: `keytool -genkeypair -v -keystore release.jks -alias ashutool -keyalg RSA -keysize 4096 -validity 36500`
+2. Add these repository secrets: `KEYSTORE_BASE64` (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+3. Add the repository variable `CERT_SHA256`: the SHA-256 of your certificate as lowercase hex without colons
+   (from `keytool -list -v -keystore release.jks`).
+4. Push a tag such as `v2.0.0`. The workflow builds, signs and publishes the APK with its checksum.
 
-- Home: live gauges and one-tap boost.
-- Games: game launcher, edge sidebar (stats, performance, DND, screenshot, record, brightness, volume), auto game mode.
-- CPU: per-cluster governor and min/max frequency, restore defaults.
-- Memory: RAM, swap on/off, swappiness slider and explanation, drop caches.
-- Battery: drain rate per hour, 24 hour usage and average, level chart, use by app, health, cycles.
-- Charging: charge limit, pause charging, temperature guard, charging current (kernel dependent).
-- Thermal: every sensor. App heat: apps using the CPU now and temperature history per app.
-- Usage: screen time per app.
-- Apps: stop, clear cache, clear data, remove for user and restore.
-- Lock: PIN or pattern, instant overlay with background blur, relock delay, network default for locked apps.
-- Hide: freeze or hide completely, vault opened by a dialer code (*#*#code#*#*) or volume up, up, down, optional password.
-- Network: block mobile data or Wi-Fi per app.
-- Alerts: choose what the live notification shows (CPU, RAM, battery, drain, network speed, sleep, storage).
-- Settings: themes, permissions, safe mode, firewall reset, action log.
+The app then shows *Official build* in About when it was signed with that key.
 
-## Safety
-- Launcher, keyboard, dialer, SMS app, system-UID apps, GMS, Play Store and root managers cannot be hidden,
-  frozen, removed, cleared, blocked or locked.
-- Package names are validated before any shell command. Governors and frequencies come only from kernel lists.
-  Charging and current writes use a fixed path whitelist.
-- Charging is switched back on when unplugged, when the service stops, and after a crash.
-- Game mode saves what it changes and restores it, also after a crash.
-- Density changes revert by themselves after 15 seconds unless confirmed.
-- Removed apps stay restorable. Firewall rules live in one chain that Settings can flush.
-- Five service restarts in two minutes switch on safe mode and pause the risky auto features.
-- Nothing is ever remounted or written under /system. Every root change is listed in Settings, Action log.
+## Credit, licence and modified copies
+Ashutool is open source and you are welcome to learn from it, fix it and build on it. In return the licence
+asks for three things, spelled out in [NOTICE](NOTICE):
 
-## Notes
-- If you forget the lock PIN, clear Ashutool's app data with root.
-- Android takes the recents preview itself, so an app cannot blur it. The lock covers the app the moment it opens instead.
-- To ship in a ROM, put the APK in `system/priv-app/Ashutool/`.
+1. Keep the author credit (name and Telegram id) in the source headers and on the About screen.
+2. Mark your version as different from the original and do not present it as mine.
+3. Keep your version open source under the same licence.
+
+A copy of the app that removes the author credit breaks the licence, and the app itself will refuse to run in
+that case. Release builds are also shrunk and renamed with R8, which makes taking the app apart and
+repackaging it harder. No app can be made impossible to modify, and the source is open on purpose,
+so the real protection is the licence. If you copy the work, give credit.
+
+This is the author's statement of intent, not legal advice.
+
+## Contributing and support
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs: Settings, About, Copy debug info, then open an issue.
+Security problems: [SECURITY.md](SECURITY.md). Chat: [@ashutosh_07x](https://t.me/ashutosh_07x).

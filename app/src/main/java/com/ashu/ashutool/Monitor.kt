@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.app.ActivityManager
@@ -68,6 +77,12 @@ object Monitor {
     @Volatile var screenOn = true
     @Volatile var uiVisible = false
 
+    /** On while something on screen shows live numbers, for example the game panel. Sampling then runs at the chosen speed. */
+    @Volatile var boost = false
+
+    /** The few thermal zones that matter for CPU temperature, so the background does not read all of them every time. */
+    @Volatile private var lightZones: List<Int> = emptyList()
+
     private var job: Job? = null
     private var prevTotal = 0L
     private var prevIdle = 0L
@@ -106,9 +121,10 @@ object Monitor {
         val pref = LockStore.int(ctx, "n_interval", 2000).toLong()
         return when {
             !screenOn -> 60_000L
-            uiVisible -> pref
-            LockStore.bool(ctx, "n_on", true) && !Guard.safe -> pref.coerceAtLeast(3000L)
-            else -> 10_000L
+            uiVisible || boost -> pref
+            // Nobody is looking at the numbers. Only the notification and the history use them, so slow is fine.
+            LockStore.bool(ctx, "n_on", true) && !Guard.safe -> pref.coerceAtLeast(10_000L)
+            else -> 15_000L
         }
     }
 
@@ -205,6 +221,7 @@ object Monitor {
     /** Zones that report battery current, voltage or charge level instead of a temperature. */
     private val NOT_A_TEMP = Regex("ibat|vbat|bcl|socd|lvl", RegexOption.IGNORE_CASE)
     private val CPU_LIKE = Regex("cpu|soc|tsens|cluster|big|little", RegexOption.IGNORE_CASE)
+    private val ZONE_ID = Regex("thermal_zone(\\d+)/type$")
 
     /** Thermal zones report in thousandths of a degree, tenths of a degree, or whole degrees depending on the chip. */
     private fun celsius(raw: Long): Float = when {
@@ -214,11 +231,16 @@ object Monitor {
     }
 
     private fun sample(ctx: Context, old: Snap): Snap {
+        // Reading thermal sensors is the costly part, some wake a power chip. All of them are read only while the
+        // app is on screen. In the background only the CPU ones are read.
+        val full = uiVisible || lightZones.isEmpty()
+        val zoneFiles = if (full) "/sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp "
+        else lightZones.joinToString(" ", postfix = " ") { "/sys/class/thermal/thermal_zone$it/type /sys/class/thermal/thermal_zone$it/temp" }
         // Two processes per sample: one grep for every small file, one for the CPU totals line.
         val lines = Root.run(
             "grep -H . /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu[0-9]*/cpufreq/cpuinfo_max_freq " +
                 "/sys/devices/system/cpu/online /sys/devices/system/cpu/present /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor " +
-                "/sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp " +
+                zoneFiles +
                 "/sys/class/power_supply/battery/charge_full /sys/class/power_supply/battery/charge_full_design " +
                 "/sys/class/power_supply/battery/cycle_count /proc/net/dev /proc/uptime",
             "grep '^cpu ' /proc/stat"
@@ -267,13 +289,19 @@ object Monitor {
 
         // Thermal. Some "thermal zones" are not temperatures at all: battery current levels, battery charge level
         // and similar virtual zones. They are skipped. Some sensors report in tenths of a degree (398 means 39.8).
-        val zones = kv.keys.filter { it.contains("thermal_zone") && it.endsWith("/type") }.mapNotNull { k ->
+        val zonesFull = kv.keys.filter { it.contains("thermal_zone") && it.endsWith("/type") }.mapNotNull { k ->
             val name = kv[k] ?: ""
             if (NOT_A_TEMP.containsMatchIn(name)) return@mapNotNull null
+            val id = ZONE_ID.find(k)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
             val raw = kv[k.removeSuffix("/type") + "/temp"]?.toLongOrNull() ?: return@mapNotNull null
             val c = celsius(raw)
-            if (c > 0f && c <= 150f) Pair(name, c) else null
+            if (c > 0f && c <= 150f) Triple(id, name, c) else null
         }
+        val zones = zonesFull.map { Pair(it.second, it.third) }
+        if (full) {
+            lightZones = zonesFull.filter { CPU_LIKE.containsMatchIn(it.second) }.sortedByDescending { it.third }.take(4).map { it.first }
+                .ifEmpty { zonesFull.take(1).map { it.first } }
+        } else if (zones.isEmpty()) lightZones = emptyList()
         // The hottest CPU or SoC sensor is the one that matters for throttling
         val pick = zones.filter { CPU_LIKE.containsMatchIn(it.first) }.maxByOrNull { it.second } ?: zones.firstOrNull()
         val cpuTemp = pick?.second ?: old.cpuTemp
@@ -305,6 +333,8 @@ object Monitor {
             tx += f.getOrNull(8)?.toLongOrNull() ?: 0L
         }
         val nowT = System.currentTimeMillis()
+        // Real time since the last sample, for the per app heat history. A long gap such as screen off counts as nothing.
+        val elapsed = if (prevT == 0L || nowT <= prevT) 0f else ((nowT - prevT) / 1000f).let { if (it > 30f) 0f else it }
         var down = old.netDown
         var up = old.netUp
         if (prevT != 0L && nowT > prevT && rx >= prevRx && tx >= prevTx) {
@@ -319,7 +349,7 @@ object Monitor {
         BatteryLog.add(batt.level, batt.charging)
         val fullMah = full / 1000f
         val fallback = if (fullMah > 0f && batt.ma > 0) (batt.ma / fullMah * 100f) * (if (batt.charging) 1f else -1f) else null
-        AppThermal.record(ctx, cpuTemp, batt.tempC, cpu, LockStore.int(ctx, "n_interval", 2000) / 1000f)
+        AppThermal.record(ctx, cpuTemp, batt.tempC, cpu, elapsed)
         val free = try { StatFs(Environment.getDataDirectory().path).availableBytes / 1073741824f } catch (e: Exception) { 0f }
 
         return Snap(

@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.app.AppOpsManager
@@ -18,8 +27,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class AppItem(
     val pkg: String, val name: String, val system: Boolean,
-    val hidden: Boolean, val game: Boolean, val guarded: Boolean
-)
+    val hidden: Boolean, val game: Boolean, val guarded: Boolean,
+    /** A system app that Play or the user has updated. It is used like any other app. */
+    val updated: Boolean = false
+) {
+    /** Built in parts of the phone: overlays, themes, navigation bars, services. Not apps you would limit. */
+    val plainSystem: Boolean get() = system && !updated
+}
 
 data class UsageItem(val pkg: String, val name: String, val ms: Long)
 
@@ -82,7 +96,8 @@ object Apps {
                     (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
                     !it.enabled || it.packageName in modes,
                     it.category == ApplicationInfo.CATEGORY_GAME,
-                    Safety.isProtected(ctx, it.packageName, it.uid)
+                    Safety.isProtected(ctx, it.packageName, it.uid),
+                    (it.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
                 )
             }
             .sortedBy { it.name.lowercase() }
@@ -169,36 +184,111 @@ object Usage {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    fun query(ctx: Context, days: Int): List<UsageItem> {
+    private const val EV_RESUMED = 1
+    private const val EV_PAUSED = 2
+    private const val EV_SCREEN_OFF = 16
+    private const val EV_SHUTDOWN = 26
+    private const val EV_STOPPED = 23
+
+    /** Midnight, local time, [back] days ago. 0 is the start of today. */
+    private fun dayStart(back: Int): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        add(Calendar.DAY_OF_YEAR, -back)
+    }.timeInMillis
+
+    /**
+     * Time each app was on screen between [from] and [to], worked out from the raw events.
+     * The ready made totals Android keeps can include time from outside the range, which is how a day ended up
+     * with more hours than it has. Here only the part inside the range counts, and time stops counting when the
+     * screen turns off, even if the app never reported that it was paused.
+     */
+    private fun fromEvents(ctx: Context, from: Long, to: Long): Map<String, Long> {
         val usm = ctx.getSystemService(UsageStatsManager::class.java)
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            add(Calendar.DAY_OF_YEAR, -(days - 1))
+        val total = HashMap<String, Long>()
+        val open = HashMap<String, Long>()
+        fun add(pkg: String, a: Long, b: Long) {
+            val lo = maxOf(a, from)
+            val hi = minOf(b, to)
+            if (hi > lo) total[pkg] = (total[pkg] ?: 0L) + (hi - lo)
+        }
+        // Start a few hours early so an app that was already open at the start of the range is known
+        val ev = usm.queryEvents(from - 6 * 3_600_000L, to) ?: return total
+        val e = UsageEvents.Event()
+        while (ev.hasNextEvent()) {
+            ev.getNextEvent(e)
+            val pkg = e.packageName ?: continue
+            val t = e.timeStamp
+            when (e.eventType) {
+                EV_RESUMED -> if (!open.containsKey(pkg)) open[pkg] = t
+                EV_PAUSED, EV_STOPPED -> open.remove(pkg)?.let { add(pkg, it, t) }
+                EV_SCREEN_OFF, EV_SHUTDOWN -> {
+                    for ((p, st) in open) add(p, st, t)
+                    open.clear()
+                }
+            }
+        }
+        for ((p, st) in open) add(p, st, to)
+        return total
+    }
+
+    /** Android's own daily totals, one map per day back. Only used for old days whose events are gone. */
+    private fun dailyBuckets(ctx: Context, days: Int): Map<Int, Map<String, Long>> {
+        val usm = ctx.getSystemService(UsageStatsManager::class.java)
+        val out = HashMap<Int, HashMap<String, Long>>()
+        val starts = (0 until days).map { dayStart(it) }
+        val stats = try { usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, starts.last(), System.currentTimeMillis()) } catch (e: Exception) { null }
+        for (u in stats ?: emptyList()) {
+            val back = starts.indexOfFirst { it <= u.firstTimeStamp + 60_000L }
+            if (back <= 0) continue
+            val ms = u.totalTimeInForeground.coerceIn(0L, 86_400_000L)
+            val m = out.getOrPut(back) { HashMap() }
+            m[u.packageName] = (m[u.packageName] ?: 0L) + ms
+        }
+        return out
+    }
+
+    /** Foreground time per app for the last [days] days. 1 means only today, from midnight until now. */
+    @Suppress("DEPRECATION")
+    fun query(ctx: Context, days: Int): List<UsageItem> {
+        val now = System.currentTimeMillis()
+        val sum = HashMap<String, Long>()
+        var buckets: Map<Int, Map<String, Long>>? = null
+        for (back in 0 until days) {
+            val from = dayStart(back)
+            val to = if (back == 0) now else dayStart(back - 1)
+            var day = fromEvents(ctx, from, to)
+            if (day.isEmpty() && back > 0) {
+                if (buckets == null) buckets = dailyBuckets(ctx, days)
+                day = buckets[back] ?: emptyMap()
+            }
+            for ((k, v) in day) sum[k] = (sum[k] ?: 0L) + v
         }
         val pm = ctx.packageManager
-        return usm.queryAndAggregateUsageStats(cal.timeInMillis, System.currentTimeMillis()).values
-            .filter { it.totalTimeInForeground > 60_000 }
+        return sum.entries
+            .filter { it.value > 60_000 }
             .map {
                 val name = try {
-                    pm.getApplicationLabel(pm.getApplicationInfo(it.packageName, 0)).toString()
+                    pm.getApplicationLabel(pm.getApplicationInfo(it.key, 0)).toString()
                 } catch (e: Exception) {
-                    it.packageName
+                    it.key
                 }
-                UsageItem(it.packageName, name, it.totalTimeInForeground)
+                UsageItem(it.key, name, it.value)
             }
             .sortedByDescending { it.ms }
     }
 
-    /** Foreground time today for every app, in milliseconds. */
+    @Volatile private var todayAt = 0L
+    @Volatile private var todayMap: Map<String, Long> = emptyMap()
+
+    /** Foreground time today for every app, in milliseconds. Cached for a few seconds because limits ask often. */
     fun todayAll(ctx: Context): Map<String, Long> {
-        val usm = ctx.getSystemService(UsageStatsManager::class.java)
-        val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        return usm.queryAndAggregateUsageStats(cal.timeInMillis, System.currentTimeMillis())
-            .mapValues { it.value.totalTimeInForeground }
+        val now = System.currentTimeMillis()
+        if (now - todayAt < 4000L && now >= todayAt) return todayMap
+        val m = fromEvents(ctx, dayStart(0), now)
+        todayMap = m
+        todayAt = now
+        return m
     }
 
     fun todayMs(ctx: Context, pkg: String): Long = todayAll(ctx)[pkg] ?: 0L

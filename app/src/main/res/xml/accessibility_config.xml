@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ashutool - root toolkit for custom ROMs
+  Copyright (C) 2026 Ashutosh Nishad
+  Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+
+  Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+  Keep this header and the author credit in every copy and modified version.
+-->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"

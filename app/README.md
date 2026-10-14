@@ -15,6 +15,8 @@ Bigger tabs have sub pages:
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
+- Games: floating app windows from the game panel have a title bar: drag to move, smaller and bigger, full screen
+  and back, close. Needs a ROM with freeform windows, otherwise the app just opens normally.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   floating windows and app shelf, screen recording with a draggable timer pill and a notification Stop button.
   The bar shows in every game and stays there: it comes back after a call, a store popup, screen off and on, or a rotation.
@@ -37,3 +39,20 @@ locked, or closed from Tasks. Package names are validated, kernel values come fr
 Charging, game mode and screen-off savers always restore. Five service restarts in two minutes switch on safe mode.
 Nothing is written under /system. Every root change is listed in Settings, Action log.
 If you forget the lock and the recovery code, clear Ashutool's app data with root.
+
+## Screen time and battery use of Ashutool itself
+- Screen time is worked out from the usage events, one day at a time. Today counts only from midnight to now,
+  and time stops when the screen turns off. Android's ready made totals can include time from outside the range.
+- App limits count the same way. Built in system parts (themes, overlays, navigation bars) are hidden from the
+  limits list unless Show system apps is on. An app that already has a limit always stays visible.
+- While the app is not on screen the monitor samples every 10 seconds and reads only the CPU thermal sensors.
+  All sensors are read, at the chosen speed, only while the app is open or the game panel is open.
+- The game watch sleeps completely outside games.
+
+## Look, backup and credits
+- Nebula is the default theme (deep violet and indigo, with a light version). Older themes remain in Settings, Appearance.
+- Settings, Backup and restore saves and loads settings from Download/Ashutool/settings-backup.json.
+  Passwords, PINs, the vault code and the lock list are never included.
+- About shows the author, licence, libraries, and Copy debug info for bug reports. A crash is kept in a file and can be copied too.
+- Made by Ashutosh Nishad, Telegram @ashutosh_07x. GNU GPL v3.0 or later, see LICENSE and NOTICE.
+

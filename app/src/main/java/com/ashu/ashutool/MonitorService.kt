@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.Manifest
@@ -20,6 +29,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 
 /**
  * Background worker. It is event driven on purpose: foreground changes arrive from the accessibility service,
@@ -61,6 +71,7 @@ class MonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (Integrity.tampered(this)) { stopSelf(); return START_NOT_STICKY }
         instance = this
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Live monitor", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
@@ -195,6 +206,7 @@ class MonitorService : Service() {
         Monitor.kick(this)
         scope?.launch(Dispatchers.IO) { Saver.screenOn(this@MonitorService) }
         handler.postDelayed({ reeval() }, 700)
+        watchWake.trySend(Unit)
     }
 
     // ---- foreground changes
@@ -233,6 +245,7 @@ class MonitorService : Service() {
             when {
                 pkg in games -> {
                     Fg.game = pkg
+                    watchWake.trySend(Unit)
                     if (!Guard.safe) enterGame(pkg)
                 }
                 pkg == packageName -> {}
@@ -307,13 +320,19 @@ class MonitorService : Service() {
         if (p != null && p != packageName && p != "com.android.systemui") Fg.set(p)
     }
 
-    /** Safety net. While you are in a game the bar is checked every two seconds and comes back if it went missing. */
+    /** Wakes the game watch. Without it the watch sleeps, so nothing runs when you are not in a game. */
+    private val watchWake = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * Safety net. While you are in a game the bar is checked every few seconds and comes back if it went missing.
+     * Outside games this does nothing and does not wake up at all.
+     */
     private suspend fun gameWatch() {
         while (currentCoroutineContext().isActive) {
             if (Monitor.screenOn && Fg.game != null && !Guard.safe) {
                 reeval()
-                delay(2000)
-            } else delay(if (Monitor.screenOn) 4000 else 30_000)
+                delay(4000)
+            } else watchWake.receive()
         }
     }
 
@@ -349,7 +368,7 @@ class MonitorService : Service() {
             } else if (Monitor.screenOn && a11y && games.isNotEmpty() && Fg.game == null) {
                 val fg = withContext(Dispatchers.IO) { Usage.foreground(this@MonitorService) }
                 if (fg != null && fg in games) Fg.set(fg)
-                delay(3000)
+                delay(6000)
             } else delay(if (Monitor.screenOn) 10_000 else 60_000)
         }
     }

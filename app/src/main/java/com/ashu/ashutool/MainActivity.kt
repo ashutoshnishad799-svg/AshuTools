@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.content.Intent
@@ -53,12 +62,14 @@ class MainActivity : ComponentActivity() {
         Palette.load(this)
         applyBars(this)
         val alias = intent?.component?.className?.endsWith("GamesAlias") == true
-        setContent { AshuTheme { Aurora { AshuApp(if (alias) P.GAMES else P.HOME) } } }
+        val modified = Integrity.tampered(this)
+        setContent { AshuTheme { Aurora { if (modified) TamperedScreen() else AshuApp(if (alias) P.GAMES else P.HOME) } } }
     }
 
     override fun onStart() {
         super.onStart()
         Monitor.uiVisible = true
+        Monitor.kick(this)
     }
 
     override fun onStop() {

@@ -1,9 +1,19 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 package com.ashu.ashutool
 
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Build
 import android.os.StatFs
@@ -727,6 +737,37 @@ object Windows {
         if (floating && Root.ok("am start --windowingMode 5 -n $c")) return true
         return Root.ok("am start -n $c")
     }
+
+    /**
+     * Id of the newest task of [pkg], or null. Read from the activity manager dump, whose lines look a little
+     * different on each Android version, so only the task number and the package are matched.
+     */
+    fun taskId(pkg: String): Int? {
+        if (!Safety.validPkg(pkg)) return null
+        val re = Regex("""#(\d+)\b[^\n]*?\bA=(?:\d+:)?${Regex.escape(pkg)}\b""")
+        for (line in Root.run("dumpsys activity activities | grep -E 'Task(Record)?\\{' | grep -F ${Root.q(pkg)} | head -n 6")) {
+            val m = re.find(line) ?: continue
+            return m.groupValues[1].toIntOrNull()
+        }
+        return null
+    }
+
+    @Volatile private var commaForm = false
+
+    /** Moves and resizes a floating task. Android has two ways to write the bounds, so the one that works is remembered. */
+    fun resize(taskId: Int, r: Rect): Boolean {
+        val bad = Regex("error|exception|unknown|usage", RegexOption.IGNORE_CASE)
+        fun attempt(cmd: String) = !bad.containsMatchIn(Root.run("$cmd 2>&1").joinToString(" "))
+        val spaced = "am task resize $taskId ${r.left} ${r.top} ${r.right} ${r.bottom}"
+        val comma = "am task resize $taskId ${r.left},${r.top},${r.right},${r.bottom}"
+        val first = if (commaForm) comma else spaced
+        val second = if (commaForm) spaced else comma
+        if (attempt(first)) return true
+        if (attempt(second)) { commaForm = !commaForm; return true }
+        return false
+    }
+
+    fun forceStop(pkg: String): Boolean = Safety.validPkg(pkg) && Root.ok("am force-stop ${Root.q(pkg)}")
 }
 
 // ======================================================================== Calls

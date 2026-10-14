@@ -1,0 +1,37 @@
+# Changelog
+
+## 2.0.0 - first stable open source release
+Made by Ashutosh Nishad, Telegram @ashutosh_07x
+
+### New
+- Nebula, a new default look: deep violet and indigo with soft pink and blue light behind frosted glass,
+  with a light version. The older themes are still there.
+- Floating windows from the game panel now come with their own title bar: drag to move, smaller and bigger
+  buttons, full screen and back, and close.
+- Backup and restore of settings to a JSON file. Passwords, PINs and the vault code are never included.
+- About page with the author, licence, open source libraries, copy debug info and copy last crash.
+- Crash log that keeps the last crash so it can be sent with a bug report.
+- Build integrity check: official, community or modified build.
+
+### Games
+- The game bar now shows in every game and stays: it comes back after a call, a store popup, screen off and on,
+  and a rotation. It cannot be swiped away any more, only moved.
+- Better game detection, a Game bar check card with a Test bar button, and one tap Mark as game.
+- Call banner and floating call controls only appear while a game is open. Speaker, mute and end are also in
+  the game panel during a call.
+- The floating call controls no longer shake or disappear when dragged.
+
+### Fixes
+- Screen time and app limits are counted from the usage events, one day at a time. Today is only today.
+- App limits hide built in system parts unless Show system apps is on.
+- Thermal page: sensors that report in tenths of a degree, and zones that are not temperatures, no longer show
+  values like 398 degrees. CPU temperature uses the hottest CPU sensor.
+- Game mode restores the heads-up notification setting you had before.
+
+### Battery use of Ashutool itself
+- In the background the monitor samples every 10 seconds and reads only the CPU thermal sensors.
+- The game watch sleeps completely outside games.
+
+### Release
+- Release builds are shrunk and renamed with R8.
+- Licence: GNU GPL v3.0 or later with attribution terms, see LICENSE and NOTICE.

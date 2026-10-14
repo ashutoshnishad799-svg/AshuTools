@@ -1,0 +1,34 @@
+Ashutool - root toolkit for custom ROMs
+Copyright (C) 2026 Ashutosh Nishad
+Telegram: @ashutosh_07x  (https://t.me/ashutosh_07x)
+
+Ashutool is free software. You can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of
+the License, or (at your option) any later version. The full text is in the LICENSE file.
+
+ADDITIONAL TERMS under section 7 of the GNU General Public License version 3
+-----------------------------------------------------------------------------
+These terms apply to the Ashutool source code and to every copy and modified version of it.
+
+1. Author attribution (GPL section 7(b)).
+   Every copy and every modified version must keep the author credit:
+     - the copyright line and the Telegram id at the top of this file,
+     - the header at the top of each source file,
+     - the author name and Telegram id shown on the About screen of the app, and in the footer
+       lines of the app screens that show them.
+   These are the Appropriate Legal Notices of Ashutool. A modified version may add its own
+   credit next to them. It may not remove them, hide them or replace them.
+
+2. No misrepresentation (GPL section 7(c)).
+   A modified version must be marked in a reasonable way as different from the original, for
+   example in its name and in its About screen. It must not be presented as the original
+   Ashutool or as made by Ashutosh Nishad.
+
+3. Names (GPL section 7(d) and 7(e)).
+   The names of the author may not be used for publicity of a modified version. No right is
+   granted to use the name "Ashutool" as the name of a modified version.
+
+Third party libraries keep their own licences: Jetpack Compose, AndroidX, Kotlin, kotlinx.coroutines
+and libsu (all Apache License 2.0).
+
+This file is a plain statement of the author's wishes under the GNU GPL. It is not legal advice.

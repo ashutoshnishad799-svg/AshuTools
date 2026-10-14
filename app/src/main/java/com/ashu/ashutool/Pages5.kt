@@ -1,3 +1,12 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
 @file:OptIn(ExperimentalLayoutApi::class)
 
 package com.ashu.ashutool
@@ -168,6 +177,7 @@ fun LimitsPage(back: () -> Unit) {
     var used by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var limits by remember { mutableStateOf(Limits.all(ctx)) }
     var query by remember { mutableStateOf("") }
+    var showSystem by remember { mutableStateOf(LockStore.bool(ctx, "limits_system", false)) }
     var edit by remember { mutableStateOf<AppItem?>(null) }
     WhileVisible {
         while (true) {
@@ -175,8 +185,13 @@ fun LimitsPage(back: () -> Unit) {
             delay(30_000)
         }
     }
-    val shown = remember(apps, query, limits) {
-        (apps ?: emptyList()).filter { !it.guarded && (query.isBlank() || it.name.contains(query, true)) }
+    val shown = remember(apps, query, limits, showSystem) {
+        // Built in parts of the phone (themes, overlays, navigation bars) are hidden unless asked for.
+        // An app that already has a limit always stays in the list so the limit can be removed.
+        (apps ?: emptyList()).filter {
+            !it.guarded && (showSystem || !it.plainSystem || limits.containsKey(it.pkg)) &&
+                (query.isBlank() || it.name.contains(query, true))
+        }
             .sortedWith(compareByDescending<AppItem> { limits.containsKey(it.pkg) }.thenBy { it.name.lowercase() })
     }
     Page("App limits", "Daily time limit per app", GBlue, Icons.Outlined.Timer, onBack = back) {
@@ -194,6 +209,14 @@ fun LimitsPage(back: () -> Unit) {
         } else {
             item { Glass { Hint("When the time is up the app is covered with a limit screen. Extra time needs your lock password if one is set.") } }
             item { SearchField(query) { query = it } }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Show system apps", showSystem, GBlue) {
+                        showSystem = !showSystem
+                        LockStore.setBool(ctx, "limits_system", showSystem)
+                    }
+                }
+            }
             items(shown.take(80), key = { it.pkg }) { app ->
                 val lim = limits[app.pkg]
                 val u = ((used[app.pkg] ?: 0L) / 60000).toInt()
