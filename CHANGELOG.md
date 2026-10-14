@@ -6,8 +6,11 @@ Made by Ashutosh Nishad, Telegram @ashutosh_07x
 ### New
 - Nebula, a new default look: deep violet and indigo with soft pink and blue light behind frosted glass,
   with a light version. The older themes are still there.
-- Floating windows from the game panel now come with their own title bar: drag to move, smaller and bigger
-  buttons, full screen and back, and close.
+- Floating windows from the game panel open on the right side by default (left or centre can be chosen under
+  Windows and apps) and come with a small control pill: drag it to move the window, full screen and back, close,
+  and a More menu with Mini, Medium and Large sizes, snap to a side, sound off, lock position and screenshot.
+  If a ROM does not allow moving windows the pill still shows the buttons that do not need it. The window is placed
+  twice, a moment apart, because some apps put it back, and Android's launch bounds are tried as a last resort.
 - Backup and restore of settings to a JSON file. Passwords, PINs and the vault code are never included.
 - About page with the author, licence, open source libraries, copy debug info and copy last crash.
 - Crash log that keeps the last crash so it can be sent with a bug report.

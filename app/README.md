@@ -15,8 +15,9 @@ Bigger tabs have sub pages:
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
-- Games: floating app windows from the game panel have a title bar: drag to move, smaller and bigger, full screen
-  and back, close. Needs a ROM with freeform windows, otherwise the app just opens normally.
+- Games: floating app windows from the game panel open on the right side (left or centre in Windows and apps) with a
+  small control pill: drag to move, full screen and back, close, and More for Mini / Medium / Large, snap to a side,
+  sound off, lock position and screenshot. Needs a ROM with freeform windows, otherwise the app just opens normally.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   floating windows and app shelf, screen recording with a draggable timer pill and a notification Stop button.
   The bar shows in every game and stays there: it comes back after a call, a store popup, screen off and on, or a rotation.

@@ -738,34 +738,65 @@ object Windows {
         return Root.ok("am start -n $c")
     }
 
+    /** Why the last window action did or did not work. Shown in the debug info so a ROM that behaves differently can be understood. */
+    @Volatile var lastDiag: String = ""
+
     /**
-     * Id of the newest task of [pkg], or null. Read from the activity manager dump, whose lines look a little
-     * different on each Android version, so only the task number and the package are matched.
+     * Id of the newest task of [pkg], or null. Three views of the activity manager are tried, because their lines
+     * look different on each Android version. Only the task number and the package are matched.
+     * A task that is already floating is preferred.
      */
     fun taskId(pkg: String): Int? {
         if (!Safety.validPkg(pkg)) return null
-        val re = Regex("""#(\d+)\b[^\n]*?\bA=(?:\d+:)?${Regex.escape(pkg)}\b""")
-        for (line in Root.run("dumpsys activity activities | grep -E 'Task(Record)?\\{' | grep -F ${Root.q(pkg)} | head -n 6")) {
-            val m = re.find(line) ?: continue
-            return m.groupValues[1].toIntOrNull()
+        val q = Root.q(pkg)
+        val lines = Root.run(
+            "dumpsys activity activities | grep -E 'Task(Record)?\\{' | grep -F $q | head -n 8",
+            "dumpsys activity recents | grep -E 'Task(Record)?\\{' | grep -F $q | head -n 8",
+            "am stack list 2>/dev/null | grep -F $q | head -n 8"
+        )
+        val a = Regex("""#(\d+)\b[^\n]*?[ :=/]${Regex.escape(pkg)}\b""")
+        val b = Regex("""taskId=(\d+):?\s+${Regex.escape(pkg)}/""")
+        var first: Int? = null
+        var floating: Int? = null
+        for (line in lines) {
+            val id = (a.find(line) ?: b.find(line))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            if (first == null) first = id
+            if (floating == null && line.contains("freeform")) floating = id
         }
-        return null
+        val id = floating ?: first
+        lastDiag = if (id != null) "task $id${if (floating != null) " floating" else ""}"
+        else if (lines.isEmpty()) "the activity manager listed nothing for $pkg"
+        else "no task number in: ${lines.first().take(110)}"
+        return id
     }
+
+    /** True if the app has a running process. Used to remove the window bar after the app was closed. */
+    fun running(pkg: String): Boolean =
+        Safety.validPkg(pkg) && Root.run("pidof ${Root.q(pkg)}").any { it.isNotBlank() }
 
     @Volatile private var commaForm = false
 
     /** Moves and resizes a floating task. Android has two ways to write the bounds, so the one that works is remembered. */
     fun resize(taskId: Int, r: Rect): Boolean {
-        val bad = Regex("error|exception|unknown|usage", RegexOption.IGNORE_CASE)
-        fun attempt(cmd: String) = !bad.containsMatchIn(Root.run("$cmd 2>&1").joinToString(" "))
+        val bad = Regex("error|exception|unknown", RegexOption.IGNORE_CASE)
+        var out = ""
+        fun attempt(cmd: String): Boolean {
+            out = Root.run("$cmd 2>&1").joinToString(" ").trim()
+            return !bad.containsMatchIn(out)
+        }
         val spaced = "am task resize $taskId ${r.left} ${r.top} ${r.right} ${r.bottom}"
         val comma = "am task resize $taskId ${r.left},${r.top},${r.right},${r.bottom}"
         val first = if (commaForm) comma else spaced
         val second = if (commaForm) spaced else comma
         if (attempt(first)) return true
         if (attempt(second)) { commaForm = !commaForm; return true }
+        lastDiag = "resize said: ${out.take(120)}"
         return false
     }
+
+    /** Silences or restores the sound of one app. */
+    fun mute(pkg: String, on: Boolean): Boolean =
+        Safety.validPkg(pkg) && Root.ok("cmd appops set ${Root.q(pkg)} PLAY_AUDIO ${if (on) "ignore" else "default"}")
 
     fun forceStop(pkg: String): Boolean = Safety.validPkg(pkg) && Root.ok("am force-stop ${Root.q(pkg)}")
 }

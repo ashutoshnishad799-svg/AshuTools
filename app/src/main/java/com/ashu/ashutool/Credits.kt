@@ -160,6 +160,7 @@ object CrashLog {
         appendLine("Safe mode: ${Guard.safe}")
         appendLine("Games found: ${GameMode.cached.size}")
         if (GameDiag.error.isNotEmpty()) appendLine("Game bar error: ${GameDiag.error}")
+        if (Windows.lastDiag.isNotEmpty()) appendLine("Floating window: ${Windows.lastDiag}")
     }
 }
 

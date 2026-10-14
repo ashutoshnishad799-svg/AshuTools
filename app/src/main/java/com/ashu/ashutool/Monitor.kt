@@ -233,8 +233,8 @@ object Monitor {
     private fun sample(ctx: Context, old: Snap): Snap {
         // Reading thermal sensors is the costly part, some wake a power chip. All of them are read only while the
         // app is on screen. In the background only the CPU ones are read.
-        val full = uiVisible || lightZones.isEmpty()
-        val zoneFiles = if (full) "/sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp "
+        val allZones = uiVisible || lightZones.isEmpty()
+        val zoneFiles = if (allZones) "/sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp "
         else lightZones.joinToString(" ", postfix = " ") { "/sys/class/thermal/thermal_zone$it/type /sys/class/thermal/thermal_zone$it/temp" }
         // Two processes per sample: one grep for every small file, one for the CPU totals line.
         val lines = Root.run(
@@ -298,7 +298,7 @@ object Monitor {
             if (c > 0f && c <= 150f) Triple(id, name, c) else null
         }
         val zones = zonesFull.map { Pair(it.second, it.third) }
-        if (full) {
+        if (allZones) {
             lightZones = zonesFull.filter { CPU_LIKE.containsMatchIn(it.second) }.sortedByDescending { it.third }.take(4).map { it.first }
                 .ifEmpty { zonesFull.take(1).map { it.first } }
         } else if (zones.isEmpty()) lightZones = emptyList()

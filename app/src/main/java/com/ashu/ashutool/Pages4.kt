@@ -411,8 +411,20 @@ private fun WindowsSub(back: () -> Unit) {
     val scope = rememberCoroutineScope()
     val apps by rememberApps()
     var shelf by remember { mutableStateOf(LockStore.set(ctx, "g_shelf")) }
+    var side by remember { mutableIntStateOf(LockStore.int(ctx, "g_float_side", 1)) }
     Page("Windows and apps", "Open apps over your game", GBlue, Icons.Outlined.Layers, onBack = back) {
         item { PrefSwitch("g_float", true, Icons.Outlined.Layers, GBlue, "Floating window", "Open shelf apps in a window when your ROM supports it") }
+        item {
+            Glass {
+                Text("Where the window opens", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Right keeps your game's left controls free. Move it any time with the bar above the window.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Left", "Right", "Center").forEachIndexed { i, name ->
+                        Chip(name, side == i, GBlue) { side = i; LockStore.setInt(ctx, "g_float_side", i) }
+                    }
+                }
+            }
+        }
         item {
             Glass {
                 Text("Freeform windows", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
