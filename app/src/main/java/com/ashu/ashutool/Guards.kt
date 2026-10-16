@@ -268,8 +268,9 @@ class IncomingBanner(private val ctx: Context) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Incoming call", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("Answer or reject from here", color = Color(0xFFB4C0D8), fontSize = 12.sp)
+                val who = Calls.caller
+                Text(who.ifEmpty { "Incoming call" }, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(if (who.isEmpty()) "Answer or reject from here" else "Incoming call", color = Color(0xFFB4C0D8), fontSize = 12.sp)
             }
             RoundBtn(Icons.Outlined.CallEnd, "Reject", Color(0xFFFF4D4D), 44) { Thread { Calls.end(ctx) }.start() }
             Spacer(Modifier.width(12.dp))
@@ -305,7 +306,7 @@ class RecentsGuard(private val ctx: Context) {
         lp.y = r.top + pad
         if (blur && Build.VERSION.SDK_INT >= 31) {
             lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-            lp.blurBehindRadius = 60
+            lp.blurBehindRadius = 100
         }
         if (Build.VERSION.SDK_INT >= 28) lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         return lp
@@ -331,7 +332,7 @@ class RecentsGuard(private val ctx: Context) {
     private fun Cover(blur: Boolean) {
         val base = Palette.cur.bg1
         Box(
-            Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).background(base.copy(alpha = if (blur) 0.35f else 0.97f)),
+            Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).background(base.copy(alpha = if (blur) 0.85f else 1f)),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {

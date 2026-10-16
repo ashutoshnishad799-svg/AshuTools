@@ -200,14 +200,6 @@ fun GlassNavBar(selected: P, onSelect: (P) -> Unit) {
             ) {
                 itemsIndexed(P.entries) { _, p -> NavItem(p, p == selected) { onSelect(p) } }
             }
-            Box(
-                Modifier.align(Alignment.CenterStart).width(20.dp).height(62.dp)
-                    .background(Brush.horizontalGradient(listOf(pal.bg2.copy(alpha = 0.95f), Color.Transparent)))
-            )
-            Box(
-                Modifier.align(Alignment.CenterEnd).width(20.dp).height(62.dp)
-                    .background(Brush.horizontalGradient(listOf(Color.Transparent, pal.bg2.copy(alpha = 0.95f))))
-            )
         }
     }
 }

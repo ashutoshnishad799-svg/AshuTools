@@ -81,7 +81,9 @@ object Root {
             "pm grant $pkg android.permission.POST_NOTIFICATIONS",
             "pm grant $pkg android.permission.READ_PHONE_STATE",
             "pm grant $pkg android.permission.ANSWER_PHONE_CALLS",
-            "dumpsys deviceidle whitelist +$pkg"
+            "dumpsys deviceidle whitelist +$pkg",
+            // lets the call banner read the caller's name from the dialer's notification
+            "cmd notification allow_listener $pkg/$pkg.CallNameService"
         )
         if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)
     }

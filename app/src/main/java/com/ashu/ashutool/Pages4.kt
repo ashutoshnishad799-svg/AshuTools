@@ -325,6 +325,19 @@ private fun SidebarSub(back: () -> Unit) {
     Page("Sidebar", "Customize the bar", GTeal, Icons.Outlined.Widgets, onBack = back) {
         item { PrefSwitch("g_sidebar", true, Icons.Outlined.Widgets, GTeal, "Game sidebar", "Edge bar with stats and quick tools while you play") }
         item { PrefSwitch("rec_pill", true, Icons.Outlined.Videocam, GRed, "Recording timer on screen", "See-through timer with a stop button you can drag") }
+        item { PrefSwitch("g_fps", true, Icons.Outlined.Speed, GGreen, "FPS meter", "A small see-through FPS number in a corner while you play") }
+        item { PrefSwitch("g_hud_speed", true, Icons.Outlined.NetworkCheck, GCyan, "Speed in the same readout", "Download speed next to the FPS number") }
+        item {
+            var pos by remember { mutableIntStateOf(LockStore.int(ctx, "g_hud_pos", 0)) }
+            Glass {
+                SectionTitle("Where the readout sits")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Top left", "Top right", "Bottom left", "Bottom right").forEachIndexed { i, n ->
+                        Chip(n, pos == i, GGreen) { pos = i; LockStore.setInt(ctx, "g_hud_pos", i) }
+                    }
+                }
+            }
+        }
         item { PrefSlider("Bar length", "g_h", 88, 40, 240, "") }
         item { PrefSlider("Bar thickness", "g_w", 7, 3, 16, "") }
         item { PrefSlider("Opacity", "g_alpha", 90, 30, 100, "%") }
@@ -387,12 +400,24 @@ private fun ModeSub(back: () -> Unit) {
     val ctx = LocalContext.current
     var govs by remember { mutableStateOf(emptyList<String>()) }
     var gov by remember { mutableStateOf(LockStore.str(ctx, "g_gov", "performance")) }
+    var prof by remember { mutableIntStateOf(LockStore.int(ctx, "g_profile_auto", 0)) }
     LaunchedEffect(Unit) { govs = withContext(Dispatchers.IO) { Sys.policies().firstOrNull()?.govs ?: emptyList() } }
     Page("Game mode", "Applied when a game opens", GFire, Icons.Outlined.Speed, onBack = back) {
-        item { PrefSwitch("g_auto", true, Icons.Outlined.PlayCircle, GBlue, "Auto game mode", "Apply these settings when a game opens") }
-        item { PrefSwitch("g_perf", true, Icons.Outlined.Speed, GFire, "Performance governor", "Restored after the game") }
-        item { PrefSwitch("g_dnd", true, Icons.Outlined.NotificationsOff, GViolet, "Do not disturb", "Silence calls and messages during the game") }
-        item { PrefSwitch("g_headsup", true, Icons.Outlined.NotificationsPaused, GPink, "Block heads-up popups", "No banners over the game") }
+        item { Glass { Hint("Everything here is off until you turn it on. You can always change the profile, do not disturb and more from the game panel.") } }
+        item { PrefSwitch("g_auto", false, Icons.Outlined.PlayCircle, GBlue, "Auto game mode", "Apply these settings when a game opens") }
+        item {
+            Glass {
+                SectionTitle("Profile when a game opens")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Standard", prof == 0, GBlue) { prof = 0; LockStore.setInt(ctx, "g_profile_auto", 0) }
+                    Chip("Performance", prof == 1, GFire) { prof = 1; LockStore.setInt(ctx, "g_profile_auto", 1) }
+                    Chip("Battery saver", prof == 2, GCyan) { prof = 2; LockStore.setInt(ctx, "g_profile_auto", 2) }
+                }
+                Text("Standard leaves the CPU as it is. Restored after the game.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+        item { PrefSwitch("g_dnd", false, Icons.Outlined.NotificationsOff, GViolet, "Do not disturb", "Silence calls and messages during the game") }
+        item { PrefSwitch("g_headsup", false, Icons.Outlined.NotificationsPaused, GPink, "Block heads-up popups", "No banners over the game") }
         item { PrefSwitch("g_kill", false, Icons.Outlined.CleaningServices, GCyan, "Stop background apps", "Frees RAM before the game starts") }
         if (govs.isNotEmpty()) item {
             Glass {
@@ -411,13 +436,13 @@ private fun WindowsSub(back: () -> Unit) {
     val scope = rememberCoroutineScope()
     val apps by rememberApps()
     var shelf by remember { mutableStateOf(LockStore.set(ctx, "g_shelf")) }
-    var side by remember { mutableIntStateOf(LockStore.int(ctx, "g_float_side", 1)) }
+    var side by remember { mutableIntStateOf(LockStore.int(ctx, "g_float_side", 0)) }
     Page("Windows and apps", "Open apps over your game", GBlue, Icons.Outlined.Layers, onBack = back) {
         item { PrefSwitch("g_float", true, Icons.Outlined.Layers, GBlue, "Floating window", "Open shelf apps in a window when your ROM supports it") }
         item {
             Glass {
                 Text("Where the window opens", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("Right keeps your game's left controls free. Move it any time with the bar above the window.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                Text("This is where a window opens the first time. After that it opens where you left it. Move it with the bar under it and resize it with the corner grip.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Left", "Right", "Center").forEachIndexed { i, name ->
                         Chip(name, side == i, GBlue) { side = i; LockStore.setInt(ctx, "g_float_side", i) }
@@ -474,12 +499,35 @@ fun SettingsPage() = SubHost(
 private fun SettingsMain(open: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    var spOn by remember { mutableStateOf(LockStore.bool(ctx, "sp_on", false)) }
+    var spX by remember { mutableIntStateOf(LockStore.int(ctx, "sp_x", 36)) }
     Page("Settings", "Look, permissions and safety", GCyan, Icons.Outlined.Settings) {
         item { NavRow(Icons.Outlined.ColorLens, GViolet, "Appearance", "Themes, glass strength, animation") { open("look") } }
         item { NavRow(Icons.Outlined.AdminPanelSettings, GCyan, "Permissions", "Root, instant lock, usage, overlay, calls") { open("perm") } }
         item { NavRow(Icons.Outlined.Shield, GGreen, "Safety", "Safe mode, firewall, protections") { open("safe") } }
         item { NavRow(Icons.Outlined.Terminal, GBlue, "Action log", "Every change made as root") { open("log") } }
         item { NavRow(Icons.Outlined.Info, GPink, "About Ashutool", "Version, developer and licence") { open("about") } }
+        item {
+            SwitchRow(
+                Icons.Outlined.NetworkCheck, GCyan, "Speed in the status bar",
+                "Network speed in the status bar, not in the notification panel. Off by default", spOn
+            ) { v ->
+                spOn = v
+                LockStore.setBool(ctx, "sp_on", v)
+                MonitorService.instance?.wakeSpeed()
+            }
+        }
+        if (spOn) item {
+            Glass {
+                SectionTitle("Where in the bar")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Left" to 22, "Left of camera" to 36, "Center" to 50, "Right" to 66).forEach { (n, v) ->
+                        Chip(n, spX == v, GCyan) { spX = v; LockStore.setInt(ctx, "sp_x", v); MonitorService.instance?.wakeSpeed() }
+                    }
+                }
+            }
+        }
+        if (spOn) item { PrefSwitch("sp_both", false, Icons.Outlined.SwapVert, GBlue, "Show upload too", "Both speeds, a little longer") }
         item {
             Glass {
                 Text("Backup and restore", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -572,7 +620,7 @@ private fun LookSub(back: () -> Unit) {
     fun pick(i: Int) { Palette.auto = false; Palette.mode = i; LockStore.setBool(ctx, "theme_auto", false); LockStore.setInt(ctx, "theme", i) }
     Page("Appearance", Palette.cur.name, GViolet, Icons.Outlined.ColorLens, onBack = back) {
         item {
-            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Nebula in dark mode, Nebula light in light mode", Palette.auto) {
+            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Pure black in dark mode, pure white in light mode", Palette.auto) {
                 Palette.auto = it
                 LockStore.setBool(ctx, "theme_auto", it)
             }

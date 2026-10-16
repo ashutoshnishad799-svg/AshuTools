@@ -86,6 +86,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -654,13 +655,22 @@ class GameSidebar(private val ctx: Context) {
     @Composable
     private fun PanelCard() {
         val s by Monitor.snap.collectAsState()
-        val shape = RoundedCornerShape(26.dp)
+        val shape = RoundedCornerShape(24.dp)
         val am = remember { ctx.getSystemService(AudioManager::class.java) }
         var vol by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
         var bright by remember {
             mutableFloatStateOf(
                 try { Settings.System.getInt(ctx.contentResolver, Settings.System.SCREEN_BRIGHTNESS).toFloat() } catch (e: Exception) { 128f }
             )
+        }
+        var fpsOn by remember { mutableStateOf(LockStore.bool(ctx, "g_fps", true)) }
+        var rotLock by remember { mutableStateOf(false) }
+        var touches by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) {
+                rotLock = Root.run("settings get system accelerometer_rotation").firstOrNull()?.trim() == "0"
+                touches = Root.run("settings get system show_touches").firstOrNull()?.trim() == "1"
+            }
         }
         val label = remember(pkg) { appLabel(pkg) }
         val shelf = remember(pkg) {
@@ -670,43 +680,56 @@ class GameSidebar(private val ctx: Context) {
         Column(
             Modifier.fillMaxSize().padding(8.dp).clip(shape)
                 .background(Brush.verticalGradient(listOf(Color(0xF2111B33), Color(0xF2081724))))
-                .border(1.dp, Color.White.copy(alpha = 0.28f), shape)
+                .border(1.dp, Color.White.copy(alpha = 0.26f), shape)
                 .verticalScroll(rememberScrollState())
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(pkg, 36.dp)
-                Spacer(Modifier.width(10.dp))
+                AppIcon(pkg, 28.dp)
+                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(label, color = SbText, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Game tools", color = SbLow, fontSize = 11.sp)
+                    Text(label, color = SbText, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Game tools", color = SbLow, fontSize = 10.sp)
                 }
-                Icon(Icons.Outlined.Close, "Close", tint = SbText, modifier = Modifier.size(26.dp).clickable { closePanel() })
+                Icon(Icons.Outlined.Close, "Close", tint = SbText, modifier = Modifier.size(22.dp).clickable { closePanel() })
             }
+            // One compact line of numbers
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat("CPU", "${s.cpu.toInt()}%"); Stat("Temp", "${s.cpuTemp.toInt()}\u00B0"); Stat("RAM", "${s.ramPct.toInt()}%")
+                Stat("Batt", "${s.batt.level}%"); Stat("Down", fmtSpeed(s.netDown))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat("Battery", "${s.batt.level}%"); Stat("Down", fmtSpeed(s.netDown)); Stat("Up", fmtSpeed(s.netUp))
+            // Performance profile
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.08f)).padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Seg("Standard", GameUi.profile == 0, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 0) } }
+                Seg("Performance", GameUi.profile == 1, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 1) } }
+                Seg("Battery saver", GameUi.profile == 2, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 2) } }
             }
             if (Calls.state == TelephonyManager.CALL_STATE_OFFHOOK) {
-                Text("On a call", color = SbLow, fontSize = 11.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Tool(Icons.Outlined.Speaker, "Speaker", Calls.speaker, Modifier.weight(1f)) { Calls.setSpeaker(ctx, !Calls.speaker) }
-                    Tool(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, "Mute", Calls.muted, Modifier.weight(1f)) { Calls.setMute(ctx, !Calls.muted) }
-                    Tool(Icons.Outlined.CallEnd, "End call", false, Modifier.weight(1f)) { io.launch { Calls.end(ctx) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MiniTool(Icons.Outlined.Speaker, "Speaker", Calls.speaker, Modifier.weight(1f)) { Calls.setSpeaker(ctx, !Calls.speaker) }
+                    MiniTool(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, "Mute", Calls.muted, Modifier.weight(1f)) { Calls.setMute(ctx, !Calls.muted) }
+                    MiniTool(Icons.Outlined.CallEnd, "End call", false, Modifier.weight(1f)) { io.launch { Calls.end(ctx) } }
+                    Spacer(Modifier.weight(1f))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tool(Icons.Outlined.Speed, "Performance", GameUi.perf, Modifier.weight(1f)) { io.launch { GameMode.setPerf(ctx, !GameUi.perf) } }
-                Tool(Icons.Outlined.NotificationsOff, "Do not disturb", GameUi.dnd, Modifier.weight(1f)) { io.launch { GameMode.setDnd(ctx, !GameUi.dnd) } }
-                Tool(Icons.Outlined.CleaningServices, "Clear RAM", false, Modifier.weight(1f)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTool(Icons.Outlined.NotificationsOff, "DND", GameUi.dnd, Modifier.weight(1f)) { io.launch { GameMode.setDnd(ctx, !GameUi.dnd) } }
+                MiniTool(Icons.Outlined.NotificationsPaused, "Popups", GameUi.heads, Modifier.weight(1f)) { io.launch { GameMode.setHeadsUp(ctx, !GameUi.heads) } }
+                MiniTool(Icons.Outlined.Speed, "FPS", fpsOn, Modifier.weight(1f)) {
+                    fpsOn = !fpsOn
+                    LockStore.setBool(ctx, "g_fps", fpsOn)
+                    MonitorService.instance?.wakeSpeed()
+                }
+                MiniTool(Icons.Outlined.CleaningServices, "Clear RAM", false, Modifier.weight(1f)) {
                     io.launch { say(if (Root.ok("am kill-all") && Sys.dropCaches()) "RAM cleared" else "Not available") }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tool(Icons.Outlined.PhotoCamera, "Screenshot", false, Modifier.weight(1f)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTool(Icons.Outlined.PhotoCamera, "Shot", false, Modifier.weight(1f)) {
                     closePanel()
                     io.launch {
                         delay(700)
@@ -714,17 +737,25 @@ class GameSidebar(private val ctx: Context) {
                         say(if (Root.ok("mkdir -p /sdcard/Pictures/Ashutool", "screencap -p $f")) "Screenshot saved" else "Could not save")
                     }
                 }
-                Tool(Icons.Outlined.Videocam, if (Recorder.running) "Stop record" else "Record", Recorder.running, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.Videocam, if (Recorder.running) "Stop" else "Record", Recorder.running, Modifier.weight(1f)) {
                     if (Recorder.running) io.launch { Recorder.stop(); say("Recording saved") }
                     else {
                         closePanel()
                         io.launch { delay(700); if (!Recorder.start()) say("Could not start recording") }
                     }
                 }
+                MiniTool(Icons.Outlined.ScreenLockRotation, "Rotation", rotLock, Modifier.weight(1f)) {
+                    rotLock = !rotLock
+                    io.launch { Root.ok("settings put system accelerometer_rotation ${if (rotLock) 0 else 1}") }
+                }
+                MiniTool(Icons.Outlined.TouchApp, "Touches", touches, Modifier.weight(1f)) {
+                    touches = !touches
+                    io.launch { Root.ok("settings put system show_touches ${if (touches) 1 else 0}") }
+                }
             }
             if (shelf.isNotEmpty()) {
-                Text("Open in window", color = SbLow, fontSize = 11.sp)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Open in window", color = SbLow, fontSize = 10.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(shelf, key = { it }) { p ->
                         Column(
                             Modifier.clickable {
@@ -736,8 +767,8 @@ class GameSidebar(private val ctx: Context) {
                             },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            AppIcon(p, 42.dp)
-                            Text(appLabel(p), color = SbLow, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(52.dp))
+                            AppIcon(p, 38.dp)
+                            Text(appLabel(p), color = SbLow, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(48.dp))
                         }
                     }
                 }
@@ -752,9 +783,41 @@ class GameSidebar(private val ctx: Context) {
             }
             Text(
                 "${Credits.APP}  \u00B7  ${Credits.AUTHOR}  \u00B7  ${Credits.TELEGRAM}",
-                color = SbLow, fontSize = 10.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = SbLow, fontSize = 9.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+
+    @Composable
+    private fun Seg(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+        val shape = RoundedCornerShape(11.dp)
+        Box(
+            modifier.bounceClick(onClick = onClick).clip(shape)
+                .background(if (selected) Brush.linearGradient(listOf(Color.White, Color(0xFFCFE3FF))) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                .padding(vertical = 7.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(label, color = if (selected) Ink else SbText, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+
+    /** Small square button: an icon with a short name under it. */
+    @Composable
+    private fun MiniTool(icon: ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+        val shape = RoundedCornerShape(14.dp)
+        Column(
+            modifier.bounceClick(onClick = onClick).clip(shape)
+                .background(
+                    if (on) Brush.linearGradient(listOf(Color.White, Color(0xFFCFE3FF)))
+                    else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.10f)))
+                )
+                .padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, label, tint = if (on) Ink else SbText, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.height(3.dp))
+            Text(label, color = if (on) Ink else SbText, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 
@@ -763,9 +826,9 @@ class GameSidebar(private val ctx: Context) {
 
     @Composable
     private fun Stat(label: String, value: String) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(84.dp)) {
-            Text(value, color = SbText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(label, color = SbLow, fontSize = 10.sp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(56.dp)) {
+            Text(value, color = SbText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(label, color = SbLow, fontSize = 9.sp)
         }
     }
 

@@ -13,3 +13,7 @@
 # libsu runs the root shell
 -keep class com.topjohnwu.superuser.** { *; }
 -dontwarn com.topjohnwu.superuser.**
+
+# Started as root with app_process to switch 5G and 4G, so its entry point must keep its name
+-keep class com.ashu.ashutool.NetModeMain { public static void main(java.lang.String[]); }
+

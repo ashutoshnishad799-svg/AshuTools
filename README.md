@@ -11,9 +11,10 @@ Free and open source, GNU GPL v3.0 or later. See [LICENSE](LICENSE) and [NOTICE]
 - **Monitor:** live CPU, memory, battery, thermal and network numbers, history graphs, app heat.
 - **Control:** CPU governor and frequency, memory and swap, charging limit, app standby and background rules.
 - **Apps:** app limits, reels blocker, app lock with PIN or pattern, hidden apps vault, firewall.
-- **Games:** game launcher, edge game bar, game mode (performance, do not disturb, no heads-up), screen recording,
+- **Games:** game launcher, edge game bar with three profiles (standard, performance, battery saver), FPS meter, game mode (nothing is automatic until you turn it on), screen recording,
   floating app windows on the side you choose, with a small control pill (move, sizes, snap, full screen, sound off, lock, screenshot, close).
-- **Calls:** compact call banner and floating call controls while you play.
+- **Calls:** compact call banner with the caller's name and floating call controls while you play.
+- **Toggles:** 5G / 4G (also a quick settings tile), mobile data, Wi-Fi, airplane, show touches, no animations, stay awake, battery saver, auto rotate. Optional network speed in the status bar.
 - **Looks:** 17 themes, Nebula by default, glass strength, optional animated background.
 - **Backup:** export and import your settings.
 

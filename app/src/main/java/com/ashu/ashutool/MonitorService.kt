@@ -11,6 +11,7 @@ package com.ashu.ashutool
 
 import android.Manifest
 import android.app.*
+import android.net.TrafficStats
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -42,6 +43,8 @@ class MonitorService : Service() {
     private var recPill: RecordPill? = null
     private var callPill: CallPill? = null
     private var banner: IncomingBanner? = null
+    private var hud: GameHud? = null
+    private var statusSpeed: StatusSpeed? = null
     private var watcher: CallWatcher? = null
     private var screenRx: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -89,6 +92,8 @@ class MonitorService : Service() {
             recPill = RecordPill(this)
             callPill = CallPill(this)
             banner = IncomingBanner(this)
+            hud = GameHud(this)
+            statusSpeed = StatusSpeed(this)
             registerScreen()
             Fg.listener = { onFg(it) }
             tryWatch()
@@ -106,6 +111,7 @@ class MonitorService : Service() {
             s.launch { housekeeping() }
             s.launch { poller() }
             s.launch { gameWatch() }
+            s.launch { speedLoop() }
         }
         return START_STICKY
     }
@@ -113,7 +119,7 @@ class MonitorService : Service() {
     /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition() }
+        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
         handler.postDelayed(fix, 150)
         handler.postDelayed(fix, 700)
     }
@@ -123,7 +129,7 @@ class MonitorService : Service() {
         Fg.listener = null
         Fg.game = null
         scope?.cancel()
-        sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide()
+        sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide(); hud?.hide(); statusSpeed?.hide()
         try { screenRx?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         watcher?.stop()
         Thread {
@@ -189,6 +195,8 @@ class MonitorService : Service() {
     private fun screenOff() {
         Monitor.screenOn = false
         sidebar?.hide()
+        hud?.hide()
+        statusSpeed?.hide()
         limitJob?.cancel()
         scope?.launch(Dispatchers.IO) { BgControl.screenOff(this@MonitorService); Saver.screenOff(this@MonitorService) }
         if (LockStore.bool(this, "bs_doze", false) && !Guard.safe) {
@@ -207,6 +215,7 @@ class MonitorService : Service() {
         scope?.launch(Dispatchers.IO) { Saver.screenOn(this@MonitorService) }
         handler.postDelayed({ reeval() }, 700)
         watchWake.trySend(Unit)
+        speedWake.trySend(Unit)
     }
 
     // ---- foreground changes
@@ -246,6 +255,7 @@ class MonitorService : Service() {
                 pkg in games -> {
                     Fg.game = pkg
                     watchWake.trySend(Unit)
+                    speedWake.trySend(Unit)
                     if (!Guard.safe) enterGame(pkg)
                 }
                 pkg == packageName -> {}
@@ -285,7 +295,7 @@ class MonitorService : Service() {
 
     private fun enterGame(pkg: String) {
         if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(pkg) else sidebar?.hide()
-        if (LockStore.bool(this, "g_auto", true) && GameMode.active != pkg) {
+        if (LockStore.bool(this, "g_auto", false) && GameMode.active != pkg) {
             scope?.launch(Dispatchers.IO) { GameMode.start(this@MonitorService, pkg) }
         }
     }
@@ -318,6 +328,52 @@ class MonitorService : Service() {
         if (Fg.pkg != null) return
         val p = try { AshuAccessibility.instance?.rootInActiveWindow?.packageName?.toString() } catch (e: Exception) { null }
         if (p != null && p != packageName && p != "com.android.systemui") Fg.set(p)
+    }
+
+    /** Wakes the speed loop, for example when the switch in Settings changes. */
+    fun wakeSpeed() { speedWake.trySend(Unit) }
+
+    private val speedWake = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * Network speed in the status bar, and the FPS and speed readout while in a game.
+     * It sleeps completely when neither is switched on, and checks the switches again every fifteen seconds.
+     */
+    private suspend fun speedLoop() {
+        var rx = 0L
+        var tx = 0L
+        var at = 0L
+        while (currentCoroutineContext().isActive) {
+            val game = Fg.game
+            val barOn = LockStore.bool(this, "sp_on", false) && game == null && !Guard.safe
+            val fpsOn = LockStore.bool(this, "g_fps", true)
+            val spdOn = LockStore.bool(this, "g_hud_speed", true)
+            val hudOn = game != null && !Guard.safe && (fpsOn || spdOn)
+            if (!Monitor.screenOn || (!barOn && !hudOn)) {
+                statusSpeed?.hide()
+                hud?.hide()
+                at = 0L
+                FpsMeter.reset()
+                withTimeoutOrNull(15_000) { speedWake.receive() }
+                continue
+            }
+            val now = SystemClock.elapsedRealtime()
+            val nrx = TrafficStats.getTotalRxBytes()
+            val ntx = TrafficStats.getTotalTxBytes()
+            if (at != 0L && nrx >= 0L && ntx >= 0L) {
+                val dt = (now - at) / 1000f
+                if (dt > 0.2f) SpeedState.text = speedText(((nrx - rx) / dt).toLong(), ((ntx - tx) / dt).toLong(), LockStore.bool(this, "sp_both", false) && !hudOn)
+            }
+            rx = nrx; tx = ntx; at = now
+            if (barOn) statusSpeed?.show() else statusSpeed?.hide()
+            if (hudOn) {
+                HudState.showFps = fpsOn
+                HudState.showSpeed = spdOn
+                hud?.show()
+                if (fpsOn && game != null) HudState.fps = withContext(Dispatchers.IO) { FpsMeter.sample(game) } ?: -1
+            } else hud?.hide()
+            delay(1000)
+        }
     }
 
     /** Wakes the game watch. Without it the watch sleeps, so nothing runs when you are not in a game. */
@@ -447,6 +503,7 @@ class MonitorService : Service() {
             else -> {
                 if (Calls.speakerForced) Calls.setSpeaker(this, false)
                 Calls.muted = false
+                Calls.caller = ""
             }
         }
         syncCallUi()

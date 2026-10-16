@@ -469,7 +469,11 @@ object Firewall {
 // ======================================================================== Games
 
 object GameUi {
+    /** 0 standard, 1 performance, 2 battery saver. */
+    var profile by mutableIntStateOf(0)
     var perf by mutableStateOf(false)
+    /** True while heads-up popups are blocked. */
+    var heads by mutableStateOf(false)
     var dnd by mutableStateOf(false)
     var rec by mutableStateOf(false)
 }
@@ -544,19 +548,30 @@ object GameMode {
         games(ctx)
     }
 
-    fun setPerf(ctx: Context, on: Boolean): Boolean {
+    fun setPerf(ctx: Context, on: Boolean): Boolean = setProfile(ctx, if (on) 1 else 0)
+
+    /**
+     * Standard puts the governors back the way they were. Performance uses the performance governor.
+     * Battery saver uses the most saving governor the phone has. What was there before is remembered and restored.
+     */
+    fun setProfile(ctx: Context, profile: Int): Boolean {
         val pols = Sys.policies()
         if (pols.isEmpty()) return false
-        if (on) {
+        if (profile != 0) {
             if (LockStore.str(ctx, "g_prev_gov", "").isEmpty()) {
                 LockStore.setStr(ctx, "g_prev_gov", pols.joinToString(",") { "${it.id}:${it.gov}" })
             }
-            val want = LockStore.str(ctx, "g_gov", "performance")
             pols.forEach { p ->
-                val g = if (want in p.govs) want else if ("performance" in p.govs) "performance" else p.gov
+                val g = if (profile == 1) {
+                    val want = LockStore.str(ctx, "g_gov", "performance")
+                    if (want in p.govs) want else if ("performance" in p.govs) "performance" else p.gov
+                } else {
+                    listOf("powersave", "conservative", "ondemand").firstOrNull { it in p.govs } ?: p.gov
+                }
                 Sys.setGov(p, g)
             }
-            GameUi.perf = true
+            GameUi.profile = profile
+            GameUi.perf = profile == 1
         } else {
             val byId = pols.associateBy { it.id }
             LockStore.str(ctx, "g_prev_gov", "").split(",").forEach { e ->
@@ -564,6 +579,7 @@ object GameMode {
                 if (x.size == 2) byId[x[0].toIntOrNull()]?.let { Sys.setGov(it, x[1]) }
             }
             LockStore.setStr(ctx, "g_prev_gov", "")
+            GameUi.profile = 0
             GameUi.perf = false
         }
         return true
@@ -587,25 +603,35 @@ object GameMode {
     fun start(ctx: Context, pkg: String) {
         active = pkg
         if (LockStore.bool(ctx, "g_kill", false)) Sys.killBackground(ctx, pkg)
-        if (LockStore.bool(ctx, "g_perf", true)) setPerf(ctx, true)
-        if (LockStore.bool(ctx, "g_dnd", true)) setDnd(ctx, true)
-        if (LockStore.bool(ctx, "g_headsup", true)) {
+        val auto = LockStore.int(ctx, "g_profile_auto", 0)
+        if (auto != 0) setProfile(ctx, auto)
+        if (LockStore.bool(ctx, "g_dnd", false)) setDnd(ctx, true)
+        if (LockStore.bool(ctx, "g_headsup", false)) setHeadsUp(ctx, true)
+    }
+
+    /** Blocks or allows heads-up popups. What you had before is remembered and put back. */
+    fun setHeadsUp(ctx: Context, block: Boolean): Boolean {
+        if (block) {
             if (LockStore.str(ctx, "g_prev_heads", "").isEmpty()) {
                 val cur = Root.run("settings get global heads_up_notifications_enabled").firstOrNull()?.trim()
                 LockStore.setStr(ctx, "g_prev_heads", if (cur == "0") "0" else "1")
             }
-            Root.ok("settings put global heads_up_notifications_enabled 0")
+            GameUi.heads = Root.ok("settings put global heads_up_notifications_enabled 0")
+        } else {
+            val prev = LockStore.str(ctx, "g_prev_heads", "")
+            if (prev.isNotEmpty()) {
+                Root.ok("settings put global heads_up_notifications_enabled ${if (prev == "0") "0" else "1"}")
+                LockStore.setStr(ctx, "g_prev_heads", "")
+            }
+            GameUi.heads = false
         }
+        return true
     }
 
     fun stop(ctx: Context) {
         if (LockStore.str(ctx, "g_prev_gov", "").isNotEmpty()) setPerf(ctx, false)
         if (LockStore.str(ctx, "g_prev_zen", "").isNotEmpty()) setDnd(ctx, false)
-        val heads = LockStore.str(ctx, "g_prev_heads", "")
-        if (heads.isNotEmpty()) {
-            Root.ok("settings put global heads_up_notifications_enabled ${if (heads == "0") "0" else "1"}")
-            LockStore.setStr(ctx, "g_prev_heads", "")
-        }
+        if (LockStore.str(ctx, "g_prev_heads", "").isNotEmpty()) setHeadsUp(ctx, false)
         active = null
     }
 
@@ -804,6 +830,8 @@ object Windows {
 // ======================================================================== Calls
 
 object Calls {
+    /** Name or number of the caller, read from the dialer's notification. Empty when unknown. */
+    var caller by mutableStateOf("")
     var state by mutableIntStateOf(TelephonyManager.CALL_STATE_IDLE)
     var speaker by mutableStateOf(false)
     var muted by mutableStateOf(false)

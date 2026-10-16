@@ -123,6 +123,7 @@ fun HomePage(root: Boolean?) {
                 color = TextLo, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
             )
         }
+        item { QuickTogglesCard() }
         item { CreditFooter() }
     }
 }

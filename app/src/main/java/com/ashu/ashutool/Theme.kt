@@ -123,11 +123,14 @@ object Palette {
     const val SLATE_LIGHT = 13
     const val NEBULA = 15
     const val NEBULA_LIGHT = 16
+    const val PURE_BLACK = 1
+    const val PURE_WHITE = 2
 
-    val cur: Pal get() = if (auto) themes[if (systemDark) NEBULA else NEBULA_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
+    /** Following the system: pure black in dark mode, pure white in light mode. Nebula stays in the list to pick. */
+    val cur: Pal get() = if (auto) themes[if (systemDark) PURE_BLACK else PURE_WHITE] else themes[mode.coerceIn(0, themes.size - 1)]
 
     fun load(ctx: Context) {
-        mode = LockStore.int(ctx, "theme", NEBULA).coerceIn(0, themes.size - 1)
+        mode = LockStore.int(ctx, "theme", PURE_BLACK).coerceIn(0, themes.size - 1)
         auto = LockStore.bool(ctx, "theme_auto", true)
         systemDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         animated = LockStore.bool(ctx, "anim_bg", false)

@@ -83,7 +83,7 @@ class AshuAccessibility : AccessibilityService() {
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> if (!ignored(pkg)) onForeground(pkg)
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_SCROLLED ->
-                if (pkg in Safety.homePkgs(this)) scheduleScan() else if (pkg in REELS) scanReels(pkg)
+                if (pkg in Safety.homePkgs(this)) scheduleScan() else if (pkg in REELS && reelOn(pkg)) scanReels(pkg)
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> if (pkg in Safety.dialerPkgs(this)) checkDialer(e)
         }
     }
@@ -200,7 +200,7 @@ class AshuAccessibility : AccessibilityService() {
         )
         if (blur && Build.VERSION.SDK_INT >= 31) {
             lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-            lp.blurBehindRadius = 70
+            lp.blurBehindRadius = 120
         }
         if (Build.VERSION.SDK_INT >= 28) lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         return lp
@@ -212,7 +212,8 @@ class AshuAccessibility : AccessibilityService() {
         val blur = LockStore.bool(this, "lock_blur", true) && blurSupported()
         overlay.show(lockParams(blur)) {
             LockPanel(
-                pkg, if (blur) 0.30f else 0.95f,
+                // Strong enough that nothing behind can be read, with or without blur
+                pkg, if (blur) 0.82f else 1f,
                 onOk = { LockStore.unlocked = pkg; leftAt = 0L; hideLock(); checkLimit(pkg) },
                 onCancel = { performGlobalAction(GLOBAL_ACTION_HOME); hideLock() }
             )
@@ -242,7 +243,7 @@ class AshuAccessibility : AccessibilityService() {
         shownFor = pkg
         overlay.show(lockParams(false)) {
             LimitPanel(
-                pkg, (usedMs / 60000).toInt(), lim + Limits.bonus(this, pkg), 0.96f,
+                pkg, (usedMs / 60000).toInt(), lim + Limits.bonus(this, pkg), 1f,
                 onHome = { performGlobalAction(GLOBAL_ACTION_HOME); hideLock() },
                 onBonus = { Limits.addBonus(this, pkg, 5); hideLock() }
             )
@@ -251,6 +252,8 @@ class AshuAccessibility : AccessibilityService() {
 
     // ---- reels blocker
     private fun scanReels(pkg: String) {
+        // The switch is checked here as well. Content events can still arrive for a while after it was turned off.
+        if (!reelOn(pkg)) return
         val now = SystemClock.elapsedRealtime()
         if (now - reelAt < 700) return
         val dt = (now - reelAt).coerceAtMost(3000L) / 1000f

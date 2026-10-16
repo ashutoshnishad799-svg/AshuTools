@@ -16,6 +16,24 @@ Made by Ashutosh Nishad, Telegram @ashutosh_07x
 - Crash log that keeps the last crash so it can be sent with a bug report.
 - Build integrity check: official, community or modified build.
 
+### Added after the first tests
+- Floating windows now look like a small desktop window: tiny red buttons on top (close, full screen, mini, more),
+  a drag bar under the window and a size grip in the corner, all with animations. The window opens where you left
+  it last time. More has sizes, snap left and right, centre, mute the app, lock the position and a screenshot.
+- Game panel is smaller and tidier, with icon buttons and a three way profile: Standard, Performance, Battery saver.
+- FPS meter: a small see-through FPS and speed readout in a corner while you play, switched on from the panel.
+- Network speed in the status bar (optional, off by default), not in the notification panel.
+- 5G / 4G toggle in the app and as a quick settings tile.
+- Quick toggles on Home: mobile data, Wi-Fi, airplane, show touches, no animations, stay awake, battery saver, auto rotate.
+- The call banner shows the name of the caller.
+- Nothing in game mode switches on by itself any more. Do not disturb, popups and the profile are off until you choose them.
+- Pure black is the default theme in dark mode, pure white in light mode. Nebula is still in the list.
+
+### Fixes after the first tests
+- Reels blocker no longer blocks when its switch is off.
+- App lock cover is fully hidden, nothing behind it shows through.
+- The dark strips at the two ends of the bottom bar are gone.
+
 ### Games
 - The game bar now shows in every game and stays: it comes back after a call, a store popup, screen off and on,
   and a rotation. It cannot be swiped away any more, only moved.
