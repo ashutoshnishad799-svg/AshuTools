@@ -77,9 +77,7 @@ private val TOGGLES = listOf(
     Tg("awake", "Stay awake", Icons.Outlined.Visibility, { setting("global", "stay_on_while_plugged_in")?.let { it != "0" } },
         { _, v -> Root.ok("settings put global stay_on_while_plugged_in ${if (v) 3 else 0}") }),
     Tg("saver", "Battery saver", Icons.Outlined.BatterySaver, { setting("global", "low_power") == "1" },
-        { _, v -> Root.ok("settings put global low_power ${flag(v)}") }),
-    Tg("rotate", "Auto rotate", Icons.Outlined.ScreenRotation, { setting("system", "accelerometer_rotation") == "1" },
-        { _, v -> Root.ok("settings put system accelerometer_rotation ${flag(v)}") })
+        { _, v -> Root.ok("settings put global low_power ${flag(v)}") })
 )
 
 @Composable

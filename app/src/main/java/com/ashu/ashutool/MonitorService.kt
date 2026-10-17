@@ -103,6 +103,7 @@ class MonitorService : Service() {
                 Saver.restoreCpu(this@MonitorService)
                 Recorder.sync()
                 GameMode.games(this@MonitorService)
+                RotationGuard.recover(this@MonitorService)
                 if (!Guard.safe) { GameMode.recover(this@MonitorService); Firewall.applyAll(this@MonitorService) }
                 handler.post { seedForeground(); reeval() }
             }
@@ -119,7 +120,7 @@ class MonitorService : Service() {
     /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val fix = Runnable { sidebar?.relayout(); FloatWindows.onRotate(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
+        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
         handler.postDelayed(fix, 150)
         handler.postDelayed(fix, 700)
     }

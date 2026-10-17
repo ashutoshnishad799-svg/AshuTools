@@ -128,9 +128,18 @@ object FloatWindows {
     /** Opens [pkg] floating. Returns false only if the app could not be started at all. */
     suspend fun open(ctx: Context, pkg: String): Boolean {
         pending.add(pkg)
+        val app = ctx.applicationContext
+        val had = withContext(Dispatchers.Main) { chromes.containsKey(pkg) }
+        // The screen must not turn once a window is up, so it is locked before the app even starts
+        if (!had) RotationGuard.hold(app)
+        var made = false
         try {
-            return openNow(ctx, pkg)
+            val ok = try { openNow(ctx, pkg) } catch (e: Exception) { note = "Window controls failed: ${e.message}"; true }
+            made = withContext(Dispatchers.Main) { !had && chromes.containsKey(pkg) }
+            return ok
         } finally {
+            // No bar was made, so nothing will release the lock later
+            if (!had && !made) RotationGuard.release(app)
             // The bar is there by now. A little extra time covers the system's own window events.
             delay(1500)
             pending.remove(pkg)
@@ -167,8 +176,6 @@ object FloatWindows {
         } else {
             note = "Opened. Could not find the window to move (${Windows.lastDiag})"
         }
-        // Only when the window could not be found at all: ask for the place when starting the app
-        if (ref == null) launchWithBounds(app, pkg, bounds)
         withContext(Dispatchers.Main) {
             val c = WindowChrome(app, pkg, taskId, movable, bounds)
             chromes[pkg]?.dismiss()
@@ -177,30 +184,6 @@ object FloatWindows {
         }
         watch()
         return true
-    }
-
-    private fun launchWithBounds(ctx: Context, pkg: String, bounds: Rect): Boolean = try {
-        val i = ctx.packageManager.getLaunchIntentForPackage(pkg)
-        if (i == null) false
-        else {
-            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            ctx.startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchBounds(bounds).toBundle())
-            true
-        }
-    } catch (e: Exception) { false }
-
-    internal fun closed(pkg: String) { chromes.remove(pkg) }
-
-    /** True while this app has one of our floating windows. Game space does not end because of it. */
-    fun hasWindow(pkg: String): Boolean = pending.contains(pkg) || chromes.containsKey(pkg)
-
-    /** The screen turned: every window goes to the place kept for the new direction. */
-    fun onRotate() { for (c in chromes.values.toList()) c.rotated() }
-
-    /** Removes all bars and puts the home screen back in full screen. For when a window layout went wrong. */
-    suspend fun reset() {
-        withContext(Dispatchers.Main) { for (c in chromes.values.toList()) c.dismiss() }
-        Windows.resetHome()
     }
 
     private fun boundsKey(ctx: Context, pkg: String): String {
@@ -287,6 +270,7 @@ object FloatWindows {
 
         @Volatile private var target = Rect(bounds)
         private val busy = AtomicBoolean(false)
+        private var released = false
 
         private fun params(w: Int, h: Int): WindowManager.LayoutParams {
             val p = WindowManager.LayoutParams(
@@ -325,17 +309,10 @@ object FloatWindows {
             visible = false
             closed(pkg)
             main.postDelayed({ topO.remove(); botO.remove(); gripO.remove() }, 220)
+            if (!released) { released = true; io.launch { RotationGuard.release(ctx) } }
         }
 
         private fun save() { if (movable && !full) saveBounds(ctx, pkg, bounds) }
-
-        /** The screen turned. Window places are kept per direction, so a landscape place is never used in portrait. */
-        fun rotated() {
-            if (!movable) return
-            if (full) { full = false; showBottom() }
-            bounds.set(savedBounds(ctx, pkg) ?: defaultBounds(ctx))
-            sync()
-        }
 
         /** Puts the three pieces around the window, or in free space if the window cannot be moved. */
         private fun place() {
@@ -407,7 +384,10 @@ object FloatWindows {
                         val t = target
                         if (last != null && last == t) break
                         if (!Windows.resize(id, t)) { failed = true; break }
+                        // A change of size makes many apps rebuild their screen, so those are sent less often than moves
+                        val resized = last == null || last.width() != t.width() || last.height() != t.height()
                         last = t
+                        delay(if (resized) 260L else 40L)
                     }
                 } finally {
                     busy.set(false)

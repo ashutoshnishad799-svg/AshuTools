@@ -463,12 +463,12 @@ private fun WindowsSub(back: () -> Unit) {
             Glass {
                 Text("Something looks wrong?", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "If a window layout went wrong, for example the home screen looks cut off, this removes all window bars and puts the home screen back in full screen.",
+                    "If a window layout went wrong, for example the home screen looks cut off, this removes all window bars, gives the screen rotation back and puts the home screen in full screen.",
                     color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
                 )
                 GradButton("Reset windows", GRed, Icons.Outlined.RestartAlt) {
                     scope.launch {
-                        withContext(Dispatchers.IO) { FloatWindows.reset() }
+                        withContext(Dispatchers.IO) { FloatWindows.reset(ctx) }
                         toast(ctx, "Windows reset")
                     }
                 }

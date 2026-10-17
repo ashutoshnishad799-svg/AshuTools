@@ -664,11 +664,9 @@ class GameSidebar(private val ctx: Context) {
             )
         }
         var fpsOn by remember { mutableStateOf(LockStore.bool(ctx, "g_fps", true)) }
-        var rotLock by remember { mutableStateOf(false) }
         var touches by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
-                rotLock = Root.run("settings get system accelerometer_rotation").firstOrNull()?.trim() == "0"
                 touches = Root.run("settings get system show_touches").firstOrNull()?.trim() == "1"
             }
         }
@@ -744,14 +742,11 @@ class GameSidebar(private val ctx: Context) {
                         io.launch { delay(700); if (!Recorder.start()) say("Could not start recording") }
                     }
                 }
-                MiniTool(Icons.Outlined.ScreenLockRotation, "Rotation", rotLock, Modifier.weight(1f)) {
-                    rotLock = !rotLock
-                    io.launch { Root.ok("settings put system accelerometer_rotation ${if (rotLock) 0 else 1}") }
-                }
                 MiniTool(Icons.Outlined.TouchApp, "Touches", touches, Modifier.weight(1f)) {
                     touches = !touches
                     io.launch { Root.ok("settings put system show_touches ${if (touches) 1 else 0}") }
                 }
+                Spacer(Modifier.weight(1f))
             }
             if (shelf.isNotEmpty()) {
                 Text("Open in window", color = SbLow, fontSize = 10.sp)

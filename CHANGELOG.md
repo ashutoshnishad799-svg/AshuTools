@@ -30,6 +30,13 @@ Made by Ashutosh Nishad, Telegram @ashutosh_07x
 - Pure black is the default theme in dark mode, pure white in light mode. Nebula is still in the list.
 
 ### Fixes after the first tests
+- The screen no longer turns while a floating window is open. A portrait app in a window over a landscape game made
+  the system turn the screen back and forth and the whole screen broke. The screen is now locked in the direction it
+  had before the app starts, and apps cannot decide the direction. When the last window closes, your own rotation
+  settings are put back, and after a crash they are restored on the next start.
+- Removed the rotation tile from the game panel, the auto rotate quick toggle and all rotation handling of windows.
+- Resizing a window with the corner grip is sent to the system less often, because each size change makes some
+  apps rebuild their screen. A window is never started a second time to place it.
 - Floating windows could move the wrong task, even the launcher, because the task id was read from the first # number
   on a line, which can be a position in the recents list. The id is now read only after "Task{hash #", only floating
   tasks are ever moved, and home and recents tasks are never touched. Reset windows on the Windows page puts the
