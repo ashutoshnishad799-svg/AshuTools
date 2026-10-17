@@ -96,6 +96,9 @@ object FloatWindows {
     private val chromes = HashMap<String, WindowChrome>()
     private val watching = AtomicBoolean(false)
 
+    /** Apps being opened right now. They count as having a window from the first moment, before the bar exists. */
+    private val pending: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** A short note for the user about the last open, empty when everything worked. */
     @Volatile var note: String = ""
 
@@ -124,33 +127,48 @@ object FloatWindows {
 
     /** Opens [pkg] floating. Returns false only if the app could not be started at all. */
     suspend fun open(ctx: Context, pkg: String): Boolean {
+        pending.add(pkg)
+        try {
+            return openNow(ctx, pkg)
+        } finally {
+            // The bar is there by now. A little extra time covers the system's own window events.
+            delay(1500)
+            pending.remove(pkg)
+        }
+    }
+
+    private suspend fun openNow(ctx: Context, pkg: String): Boolean {
         note = ""
         val app = ctx.applicationContext
         if (!Windows.open(app, pkg, true)) return false
         // An app that already has a pill just comes to the front
         if (withContext(Dispatchers.Main) { chromes.containsKey(pkg) }) return true
-        var id: Int? = null
+        // Wait for the window to exist, and only ever move it if the system made it a floating window
+        var ref: Windows.TaskRef? = null
         var tries = 0
-        while (id == null && tries < 10) {
+        while (tries < 10) {
             delay(250)
-            id = Windows.taskId(pkg)
+            ref = Windows.task(pkg)
+            if (ref != null && ref.floating) break
             tries++
         }
-        val taskId = id
+        val taskId = ref?.id
         val bounds = savedBounds(app, pkg) ?: defaultBounds(app)
         var movable = false
-        if (taskId != null) {
-            movable = Windows.resize(taskId, bounds)
+        if (ref != null && ref.floating) {
+            movable = Windows.resize(ref.id, bounds)
             if (movable) {
                 // Some apps put their window back where it was a moment after starting, so place it once more
                 delay(900)
-                Windows.resize(taskId, bounds)
+                Windows.resize(ref.id, bounds)
             } else note = "Opened. This ROM does not allow moving windows (${Windows.lastDiag})"
+        } else if (ref != null) {
+            note = "Opened, but this ROM did not make it a floating window, so only the buttons work (${Windows.lastDiag})"
         } else {
             note = "Opened. Could not find the window to move (${Windows.lastDiag})"
         }
-        // Last resort: ask for the place when starting the app. Android's own launch bounds option needs no shell command.
-        if (!movable) launchWithBounds(app, pkg, bounds)
+        // Only when the window could not be found at all: ask for the place when starting the app
+        if (ref == null) launchWithBounds(app, pkg, bounds)
         withContext(Dispatchers.Main) {
             val c = WindowChrome(app, pkg, taskId, movable, bounds)
             chromes[pkg]?.dismiss()
@@ -172,6 +190,18 @@ object FloatWindows {
     } catch (e: Exception) { false }
 
     internal fun closed(pkg: String) { chromes.remove(pkg) }
+
+    /** True while this app has one of our floating windows. Game space does not end because of it. */
+    fun hasWindow(pkg: String): Boolean = pending.contains(pkg) || chromes.containsKey(pkg)
+
+    /** The screen turned: every window goes to the place kept for the new direction. */
+    fun onRotate() { for (c in chromes.values.toList()) c.rotated() }
+
+    /** Removes all bars and puts the home screen back in full screen. For when a window layout went wrong. */
+    suspend fun reset() {
+        withContext(Dispatchers.Main) { for (c in chromes.values.toList()) c.dismiss() }
+        Windows.resetHome()
+    }
 
     private fun boundsKey(ctx: Context, pkg: String): String {
         val (w, h) = screenSize(ctx)
@@ -298,6 +328,14 @@ object FloatWindows {
         }
 
         private fun save() { if (movable && !full) saveBounds(ctx, pkg, bounds) }
+
+        /** The screen turned. Window places are kept per direction, so a landscape place is never used in portrait. */
+        fun rotated() {
+            if (!movable) return
+            if (full) { full = false; showBottom() }
+            bounds.set(savedBounds(ctx, pkg) ?: defaultBounds(ctx))
+            sync()
+        }
 
         /** Puts the three pieces around the window, or in free space if the window cannot be moved. */
         private fun place() {

@@ -119,7 +119,7 @@ class MonitorService : Service() {
     /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
+        val fix = Runnable { sidebar?.relayout(); FloatWindows.onRotate(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
         handler.postDelayed(fix, 150)
         handler.postDelayed(fix, 700)
     }
@@ -259,7 +259,7 @@ class MonitorService : Service() {
                     if (!Guard.safe) enterGame(pkg)
                 }
                 pkg == packageName -> {}
-                cur != null && isTransient(pkg) -> {}
+                cur != null && (isTransient(pkg) || FloatWindows.hasWindow(pkg)) -> {}
                 cur != null -> verifyLeave(cur, pkg)
                 else -> if (!Guard.safe) leaveGame()
             }
@@ -286,7 +286,9 @@ class MonitorService : Service() {
     private fun finishLeave(game: String, pkg: String, usage: Boolean, top: String?) {
         if (Fg.game != game || Fg.pkg != pkg) return
         // With usage access, no recent change means nothing replaced the game. Without it, trust the window event.
-        val stay = if (usage) (top == null || top == game || skipFg(top) || isTransient(top)) else (top == game)
+        // A launcher in front is never a pop-up over the game. It is the end of game space.
+        val home = pkg in Safety.homePkgs(this)
+        val stay = !home && if (usage) (top == null || top == game || skipFg(top) || isTransient(top) || FloatWindows.hasWindow(top)) else (top == game)
         if (stay) return
         Fg.game = null
         if (!Guard.safe) leaveGame()
@@ -348,7 +350,10 @@ class MonitorService : Service() {
             val barOn = LockStore.bool(this, "sp_on", false) && game == null && !Guard.safe
             val fpsOn = LockStore.bool(this, "g_fps", true)
             val spdOn = LockStore.bool(this, "g_hud_speed", true)
-            val hudOn = game != null && !Guard.safe && (fpsOn || spdOn)
+            // The readout is only for a game you can see. A launcher or any other app in front means it is not.
+            val front = Fg.pkg
+            val gameVisible = game != null && (front == null || front == game || front in games || isTransient(front) || FloatWindows.hasWindow(front))
+            val hudOn = gameVisible && !Guard.safe && (fpsOn || spdOn)
             if (!Monitor.screenOn || (!barOn && !hudOn)) {
                 statusSpeed?.hide()
                 hud?.hide()

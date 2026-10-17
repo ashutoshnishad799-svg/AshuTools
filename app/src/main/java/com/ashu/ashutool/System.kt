@@ -767,12 +767,17 @@ object Windows {
     /** Why the last window action did or did not work. Shown in the debug info so a ROM that behaves differently can be understood. */
     @Volatile var lastDiag: String = ""
 
+    /** A task of an app, and whether it is floating. Only floating tasks may ever be moved or resized. */
+    class TaskRef(val id: Int, val floating: Boolean)
+
     /**
-     * Id of the newest task of [pkg], or null. Three views of the activity manager are tried, because their lines
-     * look different on each Android version. Only the task number and the package are matched.
-     * A task that is already floating is preferred.
+     * The newest task of [pkg], or null. Three views of the activity manager are tried, because their lines look
+     * different on each Android version.
+     * The task id is only the number right after "Task{hash #". Other # numbers on the same line, such as the
+     * place in the recents list, are not task ids. Taking one of those moved the launcher by mistake once.
+     * Home and recents tasks are never returned.
      */
-    fun taskId(pkg: String): Int? {
+    fun task(pkg: String): TaskRef? {
         if (!Safety.validPkg(pkg)) return null
         val q = Root.q(pkg)
         val lines = Root.run(
@@ -780,21 +785,32 @@ object Windows {
             "dumpsys activity recents | grep -E 'Task(Record)?\\{' | grep -F $q | head -n 8",
             "am stack list 2>/dev/null | grep -F $q | head -n 8"
         )
-        val a = Regex("""#(\d+)\b[^\n]*?[ :=/]${Regex.escape(pkg)}\b""")
+        val a = Regex("""Task(?:Record)?\{\S+\s+#(\d+)\b[^\n]*?[ :=/]${Regex.escape(pkg)}\b""")
         val b = Regex("""taskId=(\d+):?\s+${Regex.escape(pkg)}/""")
-        var first: Int? = null
-        var floating: Int? = null
+        val mode = Regex("""\bmode=(\w[\w-]*)""")
+        var best: TaskRef? = null
         for (line in lines) {
             val id = (a.find(line) ?: b.find(line))?.groupValues?.get(1)?.toIntOrNull() ?: continue
-            if (first == null) first = id
-            if (floating == null && line.contains("freeform")) floating = id
+            if (line.contains("type=home") || line.contains("type=recents")) continue
+            val m = mode.find(line)?.groupValues?.get(1)
+            // Without a mode on the line (older Android) the task is taken as floating, because it was started that way
+            val floating = m == "freeform" || (m == null && !line.contains("fullscreen"))
+            if (floating) { best = TaskRef(id, true); break }
+            if (best == null) best = TaskRef(id, false)
         }
-        val id = floating ?: first
-        lastDiag = if (id != null) "task $id${if (floating != null) " floating" else ""}"
-        else if (lines.isEmpty()) "the activity manager listed nothing for $pkg"
-        else "no task number in: ${lines.first().take(110)}"
-        return id
+        lastDiag = when {
+            best != null -> "task ${best.id}${if (best.floating) " floating" else " not floating"}"
+            lines.isEmpty() -> "the activity manager listed nothing for $pkg"
+            else -> "no task number in: ${lines.first().take(110)}"
+        }
+        return best
     }
+
+    fun taskId(pkg: String): Int? = task(pkg)?.id
+
+    /** Puts the home screen back in full screen. Used by Reset windows if a window layout went wrong. */
+    fun resetHome(): Boolean =
+        Root.ok("am start --windowingMode 1 -a android.intent.action.MAIN -c android.intent.category.HOME")
 
     /** True if the app has a running process. Used to remove the window bar after the app was closed. */
     fun running(pkg: String): Boolean =

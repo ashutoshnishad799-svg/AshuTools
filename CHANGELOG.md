@@ -30,6 +30,14 @@ Made by Ashutosh Nishad, Telegram @ashutosh_07x
 - Pure black is the default theme in dark mode, pure white in light mode. Nebula is still in the list.
 
 ### Fixes after the first tests
+- Floating windows could move the wrong task, even the launcher, because the task id was read from the first # number
+  on a line, which can be a position in the recents list. The id is now read only after "Task{hash #", only floating
+  tasks are ever moved, and home and recents tasks are never touched. Reset windows on the Windows page puts the
+  home screen back in full screen.
+- The game bar and the readout stay while a floating window is open over the game, and go when a launcher shows.
+- Window places are kept per screen direction, and windows move to the right place when the screen turns.
+- The FPS readout sits below the status bar, and FPS is read from the display driver on Qualcomm phones.
+- 5G switch finds the phone service methods by name and says what the phone offers when it cannot change it.
 - Reels blocker no longer blocks when its switch is off.
 - App lock cover is fully hidden, nothing behind it shows through.
 - The dark strips at the two ends of the bottom bar are gone.

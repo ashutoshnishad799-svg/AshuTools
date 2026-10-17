@@ -28,6 +28,23 @@ object NetModeMain {
     /** Network type 20 is NR (5G). The bit of a network type is 1 shifted by (type - 1). */
     private const val NR_BIT = 1L shl 19
 
+    /**
+     * Fills in the arguments from the parameter types: the first int is the subscription, a second int is the
+     * reason (0 is the user), a long is the bitmask, and a text is a package name.
+     */
+    private fun argsFor(m: java.lang.reflect.Method, sub: Int, mask: Long): Array<Any?> {
+        var ints = 0
+        return m.parameterTypes.map<Class<*>, Any?> { t ->
+            when {
+                t == Int::class.javaPrimitiveType -> { ints++; if (ints == 1) sub else 0 }
+                t == Long::class.javaPrimitiveType -> mask
+                t == String::class.java -> "com.android.shell"
+                t == Boolean::class.javaPrimitiveType -> false
+                else -> null
+            }
+        }.toTypedArray()
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         try {
@@ -38,26 +55,21 @@ object NetModeMain {
             val stub = Class.forName("com.android.internal.telephony.ITelephony\$Stub")
             val tel = stub.getMethod("asInterface", IBinder::class.java).invoke(null, binder)!!
             val methods = tel.javaClass.methods
-            val getNew = methods.firstOrNull { it.name == "getAllowedNetworkTypesForReason" && it.parameterTypes.size == 2 }
-            val getOld = methods.firstOrNull { it.name == "getAllowedNetworkTypes" && it.parameterTypes.size == 1 }
-            val cur: Long = when {
-                getNew != null -> getNew.invoke(tel, sub, 0) as Long
-                getOld != null -> getOld.invoke(tel, sub) as Long
-                else -> { println("ERR this Android has no network type api"); return }
-            }
+            val names = methods.filter { it.name.contains("NetworkType") }.joinToString(" ") { "${it.name}/${it.parameterTypes.size}" }
+            val getter = methods.firstOrNull { it.name == "getAllowedNetworkTypesForReason" }
+                ?: methods.firstOrNull { it.name == "getAllowedNetworkTypes" }
+            if (getter == null) { println("ERR no network type api. Phone service has: $names"); return }
+            val cur = (getter.invoke(tel, *argsFor(getter, sub, 0L)) as Number).toLong()
             if (cmd == "get") {
                 println("NR=${if ((cur and NR_BIT) != 0L) 1 else 0}")
                 return
             }
             val want = if (cmd == "set5") (cur or NR_BIT) else (cur and NR_BIT.inv())
-            val setNew = methods.firstOrNull { it.name == "setAllowedNetworkTypesForReason" && it.parameterTypes.size == 3 }
-            val setOld = methods.firstOrNull { it.name == "setAllowedNetworkTypes" && it.parameterTypes.size == 2 }
-            val ok = when {
-                setNew != null -> setNew.invoke(tel, sub, 0, want) as Boolean
-                setOld != null -> setOld.invoke(tel, sub, want) as Boolean
-                else -> { println("ERR this Android cannot change the network type"); return }
-            }
-            println(if (ok) "OK" else "ERR the phone refused")
+            val setter = methods.firstOrNull { it.name == "setAllowedNetworkTypesForReason" }
+                ?: methods.firstOrNull { it.name == "setAllowedNetworkTypes" }
+            if (setter == null) { println("ERR cannot change it. Phone service has: $names"); return }
+            val r = setter.invoke(tel, *argsFor(setter, sub, want))
+            println(if ((r as? Boolean) ?: true) "OK" else "ERR the phone refused")
         } catch (e: Throwable) {
             val c = e.cause ?: e
             println("ERR ${c.javaClass.simpleName}: ${c.message}")

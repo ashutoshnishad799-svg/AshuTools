@@ -459,6 +459,21 @@ private fun WindowsSub(back: () -> Unit) {
                 }
             }
         }
+        item {
+            Glass {
+                Text("Something looks wrong?", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "If a window layout went wrong, for example the home screen looks cut off, this removes all window bars and puts the home screen back in full screen.",
+                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
+                )
+                GradButton("Reset windows", GRed, Icons.Outlined.RestartAlt) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { FloatWindows.reset() }
+                        toast(ctx, "Windows reset")
+                    }
+                }
+            }
+        }
         item { SectionTitle("Sidebar shelf", "${shelf.size} chosen") }
         item { Glass { Hint("Chosen apps show in the sidebar under Open in window. With none chosen, your games are shown.") } }
         items((apps ?: emptyList()).filter { !it.system && !it.guarded }, key = { it.pkg }) { a ->

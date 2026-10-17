@@ -36,6 +36,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
+
+/** Height of the status bar in pixels. */
+fun statusBarHeight(ctx: Context): Int {
+    val id = ctx.resources.getIdentifier("status_bar_height", "dimen", "android")
+    val h = if (id > 0) ctx.resources.getDimensionPixelSize(id) else 0
+    return if (h > 0) h else (24 * ctx.resources.displayMetrics.density).toInt()
+}
 
 /** Formats a speed in bytes per second, for example 850 KB/s or 2.4 MB/s. */
 fun speedText(down: Long, up: Long, both: Boolean): String {
@@ -74,8 +82,26 @@ object FpsMeter {
         return mine.lastOrNull { it.contains("SurfaceView") } ?: mine.lastOrNull { it.contains("#") } ?: mine.lastOrNull()
     }
 
+    private val SYSFS = listOf(
+        "/sys/class/drm/sde-crtc-0/measured_fps", "/sys/class/graphics/fb0/measured_fps", "/sys/class/drm/card0/sde-crtc-0/measured_fps"
+    )
+    @Volatile private var sysfs: String? = null
+    private var sysfsChecked = false
+
+    /** Frames per second the display driver reports. Qualcomm phones have it. Null when this phone does not. */
+    private fun fromDisplay(): Int? {
+        if (!sysfsChecked) {
+            sysfsChecked = true
+            sysfs = SYSFS.firstOrNull { p -> Root.run("cat $p 2>/dev/null").any { it.contains("fps", ignoreCase = true) } }
+        }
+        val p = sysfs ?: return null
+        val text = Root.run("cat $p 2>/dev/null").joinToString(" ")
+        return Regex("fps:\\s*([0-9.]+)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toFloatOrNull()?.roundToInt()
+    }
+
     /** Frames shown during the last second, or null when this phone does not give the numbers. */
     fun sample(pkg: String): Int? {
+        fromDisplay()?.let { return it }
         if (layerPkg != pkg || layer == null) {
             layer = findLayer(pkg)
             layerPkg = pkg
@@ -125,14 +151,16 @@ class GameHud(private val ctx: Context) {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         )
-        lp.gravity = when (LockStore.int(ctx, "g_hud_pos", 0)) {
+        val pos = LockStore.int(ctx, "g_hud_pos", 0)
+        lp.gravity = when (pos) {
             1 -> Gravity.TOP or Gravity.END
             2 -> Gravity.BOTTOM or Gravity.START
             3 -> Gravity.BOTTOM or Gravity.END
             else -> Gravity.TOP or Gravity.START
         }
         lp.x = (10 * d).toInt()
-        lp.y = (6 * d).toInt()
+        // Below the status bar when it is on top, so it never covers the clock or the icons
+        lp.y = if (pos < 2) statusBarHeight(ctx) + (4 * d).toInt() else (6 * d).toInt()
         return lp
     }
 
@@ -167,11 +195,7 @@ class GameHud(private val ctx: Context) {
 class StatusSpeed(private val ctx: Context) {
     private val overlay = Overlay(ctx)
 
-    private fun barHeight(): Int {
-        val id = ctx.resources.getIdentifier("status_bar_height", "dimen", "android")
-        val h = if (id > 0) ctx.resources.getDimensionPixelSize(id) else 0
-        return if (h > 0) h else (24 * ctx.resources.displayMetrics.density).toInt()
-    }
+    private fun barHeight(): Int = statusBarHeight(ctx)
 
     private fun params(): WindowManager.LayoutParams {
         val (sw, _) = screenSize(ctx)
