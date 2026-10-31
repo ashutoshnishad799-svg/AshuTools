@@ -1,0 +1,13 @@
+<!--
+  Ashutool - root toolkit for custom ROMs
+  Copyright (C) 2026 Ashutosh Nishad
+  Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+
+  Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+  Keep this header and the author credit in every copy and modified version.
+-->
+<resources>
+    <string name="app_name">Ashutool</string>
+    <string name="games_name">Ashu Games</string>
+    <string name="a11y_desc">Covers locked apps the moment they open, blurs locked apps on the recents screen, enforces app time limits and the reels blocker, and listens for the vault dial code and volume keys. It only looks at window titles and a few view ids in the launcher, Instagram, YouTube and the dialer. Nothing is stored or sent.</string>
+</resources>

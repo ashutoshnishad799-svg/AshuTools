@@ -1,0 +1,104 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
+package com.ashu.ashutool
+
+import android.content.Context
+import android.os.IBinder
+import android.telephony.SubscriptionManager
+
+/**
+ * Runs as root, started with app_process:
+ *   CLASSPATH=<apk> app_process /system/bin com.ashu.ashutool.NetModeMain get|set5|set4 <subscription id>
+ * It talks to the phone service directly, so it must not touch the app's own Context.
+ * Only the 5G bit of the allowed network types is changed. Everything else the phone allows stays as it was.
+ */
+object NetModeMain {
+    /** Network type 20 is NR (5G). The bit of a network type is 1 shifted by (type - 1). */
+    private const val NR_BIT = 1L shl 19
+
+    /**
+     * Fills in the arguments from the parameter types: the first int is the subscription, a second int is the
+     * reason (0 is the user), a long is the bitmask, and a text is a package name.
+     */
+    private fun argsFor(m: java.lang.reflect.Method, sub: Int, mask: Long): Array<Any?> {
+        var ints = 0
+        return m.parameterTypes.map<Class<*>, Any?> { t ->
+            when {
+                t == Int::class.javaPrimitiveType -> { ints++; if (ints == 1) sub else 0 }
+                t == Long::class.javaPrimitiveType -> mask
+                t == String::class.java -> "com.android.shell"
+                t == Boolean::class.javaPrimitiveType -> false
+                else -> null
+            }
+        }.toTypedArray()
+    }
+
+    @JvmStatic
+    fun main(args: Array<String>) {
+        try {
+            val cmd = args.getOrNull(0) ?: "get"
+            val sub = args.getOrNull(1)?.toIntOrNull() ?: -1
+            val serviceManager = Class.forName("android.os.ServiceManager")
+            val binder = serviceManager.getMethod("getService", String::class.java).invoke(null, "phone") as IBinder
+            val stub = Class.forName("com.android.internal.telephony.ITelephony\$Stub")
+            val tel = stub.getMethod("asInterface", IBinder::class.java).invoke(null, binder)!!
+            val methods = tel.javaClass.methods
+            val names = methods.filter { it.name.contains("NetworkType") }.joinToString(" ") { "${it.name}/${it.parameterTypes.size}" }
+            val getter = methods.firstOrNull { it.name == "getAllowedNetworkTypesForReason" }
+                ?: methods.firstOrNull { it.name == "getAllowedNetworkTypes" }
+            if (getter == null) { println("ERR no network type api. Phone service has: $names"); return }
+            val cur = (getter.invoke(tel, *argsFor(getter, sub, 0L)) as Number).toLong()
+            if (cmd == "get") {
+                println("NR=${if ((cur and NR_BIT) != 0L) 1 else 0}")
+                return
+            }
+            val want = if (cmd == "set5") (cur or NR_BIT) else (cur and NR_BIT.inv())
+            val setter = methods.firstOrNull { it.name == "setAllowedNetworkTypesForReason" }
+                ?: methods.firstOrNull { it.name == "setAllowedNetworkTypes" }
+            if (setter == null) { println("ERR cannot change it. Phone service has: $names"); return }
+            val r = setter.invoke(tel, *argsFor(setter, sub, want))
+            println(if ((r as? Boolean) ?: true) "OK" else "ERR the phone refused")
+        } catch (e: Throwable) {
+            val c = e.cause ?: e
+            println("ERR ${c.javaClass.simpleName}: ${c.message}")
+        }
+    }
+}
+
+/** Switches 5G on and off from the app and from the quick settings tile. */
+object NetMode {
+    private fun subId(): Int {
+        val d = SubscriptionManager.getDefaultDataSubscriptionId()
+        return if (d > 0) d else SubscriptionManager.getDefaultSubscriptionId()
+    }
+
+    /** What the phone service said the last time, kept for Copy debug info. Empty before the first try. */
+    @Volatile var lastRaw: String = ""
+
+    private fun run(ctx: Context, mode: String): String {
+        val apk = ctx.applicationInfo.sourceDir
+        val out = Root.run("CLASSPATH=${Root.q(apk)} app_process /system/bin com.ashu.ashutool.NetModeMain $mode ${subId()} 2>&1").joinToString("\n")
+        lastRaw = "$mode sub=${subId()}: ${out.trim().take(220)}"
+        return out
+    }
+
+    /** true when 5G is allowed, false when it is switched off, null when this phone does not say. */
+    fun query(ctx: Context): Boolean? =
+        Regex("NR=(\\d)").find(run(ctx, "get"))?.groupValues?.get(1)?.let { it == "1" }
+
+    /** Empty text when it worked, otherwise the reason it did not. */
+    fun set(ctx: Context, fiveG: Boolean): String {
+        val out = run(ctx, if (fiveG) "set5" else "set4").trim()
+        // The runtime can print warning lines before the answer, so the answer is looked for on every line
+        if (out.lineSequence().any { it.trim() == "OK" }) return ""
+        val err = out.lineSequence().firstOrNull { it.startsWith("ERR") } ?: out
+        return err.ifEmpty { "No answer from the phone" }
+    }
+}

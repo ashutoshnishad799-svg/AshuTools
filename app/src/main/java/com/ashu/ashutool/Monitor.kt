@@ -1,0 +1,387 @@
+/*
+ * Ashutool - root toolkit for custom ROMs
+ * Copyright (C) 2026 Ashutosh Nishad
+ * Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+ *
+ * Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+ * Keep this header and the author credit in every copy and modified version.
+ */
+
+package com.ashu.ashutool
+
+import android.app.ActivityManager
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
+import android.os.Environment
+import android.os.PowerManager
+import android.os.StatFs
+import android.os.SystemClock
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+data class Core(val id: Int, val online: Boolean, val khz: Int, val maxKhz: Int)
+
+data class Batt(
+    val level: Int = 0,
+    val status: String = "-",
+    val charging: Boolean = false,
+    val plugged: String = "-",
+    val health: String = "-",
+    val tempC: Float = 0f,
+    val mv: Int = 0,
+    val ma: Int = 0,
+    val tech: String = "-",
+    val capHealth: Int = -1,
+    val cycles: Int = -1,
+    val estMah: Int = -1,
+    val designMah: Int = -1
+)
+
+data class Snap(
+    val cpu: Float = 0f,
+    val cores: List<Core> = emptyList(),
+    val gov: String = "-",
+    val cpuTemp: Float = 0f,
+    val ramPct: Float = 0f,
+    val ramUsedMb: Long = 0,
+    val ramTotalMb: Long = 0,
+    val batt: Batt = Batt(),
+    val cpuHist: List<Float> = emptyList(),
+    val tempHist: List<Float> = emptyList(),
+    val currHist: List<Float> = emptyList(),
+    val ramHist: List<Float> = emptyList(),
+    val cpuTempHist: List<Float> = emptyList(),
+    val zones: List<Pair<String, Float>> = emptyList(),
+    val ratePh: Float? = null,
+    val drain24: Float = 0f,
+    val avg24: Float = 0f,
+    val netDown: Long = 0,
+    val netUp: Long = 0,
+    val deepSleep: Int = 0,
+    val freeGb: Float = 0f,
+    val uptimeSec: Long = 0
+)
+
+/**
+ * Samples CPU, RAM, thermal, battery and network.
+ * To save battery it slows down when the screen is off (battery only, once a minute)
+ * and when the app is not on screen.
+ */
+object Monitor {
+    private val _snap = MutableStateFlow(Snap())
+    val snap: StateFlow<Snap> = _snap
+
+    @Volatile var screenOn = true
+    @Volatile var uiVisible = false
+
+    /** On while something on screen shows live numbers, for example the game panel. Sampling then runs at the chosen speed. */
+    @Volatile var boost = false
+
+    /** The few thermal zones that matter for CPU temperature, so the background does not read all of them every time. */
+    @Volatile private var lightZones: List<Int> = emptyList()
+
+    private var job: Job? = null
+    private var prevTotal = 0L
+    private var prevIdle = 0L
+    private var prevRx = 0L
+    private var prevTx = 0L
+    private var prevT = 0L
+    private val cpuH = ArrayList<Float>()
+    private val tempH = ArrayList<Float>()
+    private val currH = ArrayList<Float>()
+    private val ramH = ArrayList<Float>()
+    private val cTempH = ArrayList<Float>()
+
+    fun start(ctx: Context) {
+        if (job?.isActive == true) return
+        val app = ctx.applicationContext
+        screenOn = try { app.getSystemService(PowerManager::class.java).isInteractive } catch (e: Exception) { true }
+        job = CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            while (isActive) {
+                try {
+                    _snap.value = if (screenOn) sample(app, _snap.value) else light(app, _snap.value)
+                } catch (_: Exception) {
+                }
+                delay(interval(app))
+            }
+        }
+    }
+
+    /** Restart sampling right away, used when the screen turns on. */
+    fun kick(ctx: Context) {
+        job?.cancel()
+        job = null
+        start(ctx)
+    }
+
+    private fun interval(ctx: Context): Long {
+        val pref = LockStore.int(ctx, "n_interval", 2000).toLong()
+        // Features that act on the battery numbers need them fairly fresh even when nobody looks at the screen
+        val fresh = LockStore.bool(ctx, "cl_on", false) || LockStore.bool(ctx, "cl_temp_on", false) ||
+            LockStore.bool(ctx, "cl_manual", false) || LockStore.bool(ctx, "bs_auto", false)
+        return when {
+            !screenOn -> 60_000L
+            uiVisible || boost -> pref
+            // Nobody is looking at the numbers. Only the notification and the history use them, so slow is fine.
+            LockStore.bool(ctx, "n_on", true) && !Guard.safe -> pref.coerceAtLeast(if (fresh) 10_000L else 20_000L)
+            else -> if (fresh) 15_000L else 30_000L
+        }
+    }
+
+    private fun push(list: ArrayList<Float>, v: Float): List<Float> {
+        list.add(v)
+        if (list.size > 60) list.removeAt(0)
+        return list.toList()
+    }
+
+    private fun parseRange(s: String?): Set<Int> {
+        if (s.isNullOrBlank()) return emptySet()
+        val r = HashSet<Int>()
+        for (p in s.split(",")) {
+            val a = p.trim().split("-")
+            val lo = a[0].toIntOrNull() ?: continue
+            val hi = a.getOrNull(1)?.toIntOrNull() ?: lo
+            for (i in lo..hi) r.add(i)
+        }
+        return r
+    }
+
+    /** Battery readings. The current is smoothed over a few samples so it does not jump around. */
+    private fun battery(ctx: Context, fullUah: Long, designUah: Long, cycles: Int, old: Batt): Batt {
+        val bi = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val bm = ctx.getSystemService(BatteryManager::class.java)
+        val level = bi?.getIntExtra(BatteryManager.EXTRA_LEVEL, 0) ?: 0
+        val scale = (bi?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100).coerceAtLeast(1)
+        val status = bi?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        val statusText = when (status) {
+            BatteryManager.BATTERY_STATUS_CHARGING -> "Charging"
+            BatteryManager.BATTERY_STATUS_DISCHARGING -> "Discharging"
+            BatteryManager.BATTERY_STATUS_FULL -> "Full"
+            BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "Not charging"
+            else -> "Unknown"
+        }
+        val plugged = when (bi?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) {
+            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
+            else -> "Battery"
+        }
+        val health = when (bi?.getIntExtra(BatteryManager.EXTRA_HEALTH, 0) ?: 0) {
+            BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
+            BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
+            BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"
+            BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over voltage"
+            BatteryManager.BATTERY_HEALTH_COLD -> "Cold"
+            else -> "Unknown"
+        }
+        val raw = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        val maRaw = Math.abs(if (Math.abs(raw) > 20000) raw / 1000 else raw)
+        val ma = if (old.ma > 0 && maRaw > 0) (old.ma * 2 + maRaw) / 3 else maRaw
+        val lvl = level * 100 / scale
+        val counter = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+        val est = if (counter > 0 && lvl in 15..98) (counter / 1000f / (lvl / 100f)).toInt() else old.estMah
+        return Batt(
+            level = lvl,
+            status = statusText,
+            charging = charging,
+            plugged = plugged,
+            health = health,
+            tempC = (bi?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f,
+            mv = bi?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0,
+            ma = ma,
+            tech = bi?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY) ?: "-",
+            capHealth = if (fullUah > 0 && designUah > 0) (fullUah * 100 / designUah).toInt().coerceAtMost(100) else old.capHealth,
+            cycles = if (cycles > 0) cycles else old.cycles,
+            estMah = est,
+            designMah = if (designUah > 0) (designUah / 1000).toInt() else old.designMah
+        )
+    }
+
+    /** Screen is off: battery only, no root commands. */
+    private fun light(ctx: Context, old: Snap): Snap {
+        BatteryLog.init(ctx)
+        val b = battery(ctx, 0L, 0L, -1, old.batt)
+        BatteryLog.add(b.level, b.charging)
+        CurrentLog.add(b)
+        Session.tick(ctx, b.charging, b.level, screenOn)
+        return old.copy(
+            batt = b,
+            ratePh = BatteryLog.rate() ?: old.ratePh,
+            drain24 = BatteryLog.drain24(),
+            avg24 = BatteryLog.avg24(),
+            deepSleep = deep()
+        )
+    }
+
+    private fun deep(): Int {
+        val awake = SystemClock.uptimeMillis().toFloat()
+        val total = SystemClock.elapsedRealtime().toFloat().coerceAtLeast(1f)
+        return ((1f - awake / total) * 100f).toInt().coerceIn(0, 100)
+    }
+
+    /** Zones that report battery current, voltage or charge level instead of a temperature. */
+    private val NOT_A_TEMP = Regex("ibat|vbat|bcl|socd|lvl", RegexOption.IGNORE_CASE)
+    private val CPU_LIKE = Regex("cpu|soc|tsens|cluster|big|little", RegexOption.IGNORE_CASE)
+    private val ZONE_ID = Regex("thermal_zone(\\d+)/type$")
+
+    /** Thermal zones report in thousandths of a degree, tenths of a degree, or whole degrees depending on the chip. */
+    private fun celsius(raw: Long): Float = when {
+        raw >= 1000 -> raw / 1000f
+        raw in 150L..999L -> raw / 10f
+        else -> raw.toFloat()
+    }
+
+    private fun sample(ctx: Context, old: Snap): Snap {
+        // Reading thermal sensors is the costly part, some wake a power chip. All of them are read only while the
+        // app is on screen. In the background only the CPU ones are read.
+        val allZones = uiVisible || lightZones.isEmpty()
+        val zoneFiles = if (allZones) "/sys/class/thermal/thermal_zone[0-9]*/type /sys/class/thermal/thermal_zone[0-9]*/temp "
+        else lightZones.joinToString(" ", postfix = " ") { "/sys/class/thermal/thermal_zone$it/type /sys/class/thermal/thermal_zone$it/temp" }
+        // Two processes per sample: one grep for every small file, one for the CPU totals line.
+        val lines = Root.run(
+            "grep -H . /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu[0-9]*/cpufreq/cpuinfo_max_freq " +
+                "/sys/devices/system/cpu/online /sys/devices/system/cpu/present /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor " +
+                zoneFiles +
+                "/sys/class/power_supply/battery/charge_full /sys/class/power_supply/battery/charge_full_design " +
+                "/sys/class/power_supply/battery/cycle_count /proc/net/dev /proc/uptime",
+            "grep '^cpu ' /proc/stat"
+        )
+        var statLine = ""
+        val netLines = ArrayList<String>()
+        var uptime = 0L
+        val kv = HashMap<String, String>()
+        for (l in lines) {
+            if (l.startsWith("cpu ")) statLine = l
+            else if (l.startsWith("/proc/net/dev:")) netLines.add(l.removePrefix("/proc/net/dev:"))
+            else if (l.startsWith("/proc/uptime:")) uptime = l.removePrefix("/proc/uptime:").substringBefore('.').toLongOrNull() ?: uptime
+            else {
+                val i = l.indexOf(':')
+                if (i > 0) kv[l.substring(0, i)] = l.substring(i + 1).trim()
+            }
+        }
+
+        // CPU load from /proc/stat deltas
+        var cpu = old.cpu
+        val p = statLine.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+        if (p.size >= 5) {
+            val total = p.take(8).sum()
+            val idle = p[3] + p[4]
+            if (prevTotal != 0L && total > prevTotal) {
+                cpu = ((total - prevTotal - (idle - prevIdle)).toFloat() / (total - prevTotal) * 100f).coerceIn(0f, 100f)
+            }
+            prevTotal = total
+            prevIdle = idle
+        }
+
+        // Cores
+        val base = "/sys/devices/system/cpu"
+        val online = parseRange(kv["$base/online"])
+        var present = parseRange(kv["$base/present"])
+        if (present.isEmpty()) present = online
+        val cores = present.sorted().map { id ->
+            Core(
+                id,
+                id in online,
+                kv["$base/cpu$id/cpufreq/scaling_cur_freq"]?.toIntOrNull() ?: 0,
+                kv["$base/cpu$id/cpufreq/cpuinfo_max_freq"]?.toIntOrNull() ?: 0
+            )
+        }
+        val gov = kv["$base/cpu0/cpufreq/scaling_governor"] ?: old.gov
+
+        // Thermal. Some "thermal zones" are not temperatures at all: battery current levels, battery charge level
+        // and similar virtual zones. They are skipped. Some sensors report in tenths of a degree (398 means 39.8).
+        val zonesFull = kv.keys.filter { it.contains("thermal_zone") && it.endsWith("/type") }.mapNotNull { k ->
+            val name = kv[k] ?: ""
+            if (NOT_A_TEMP.containsMatchIn(name)) return@mapNotNull null
+            val id = ZONE_ID.find(k)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
+            val raw = kv[k.removeSuffix("/type") + "/temp"]?.toLongOrNull() ?: return@mapNotNull null
+            val c = celsius(raw)
+            if (c > 0f && c <= 150f) Triple(id, name, c) else null
+        }
+        val zones = zonesFull.map { Pair(it.second, it.third) }
+        if (allZones) {
+            lightZones = zonesFull.filter { CPU_LIKE.containsMatchIn(it.second) }.sortedByDescending { it.third }.take(4).map { it.first }
+                .ifEmpty { zonesFull.take(1).map { it.first } }
+        } else if (zones.isEmpty()) lightZones = emptyList()
+        // The hottest CPU or SoC sensor is the one that matters for throttling
+        val pick = zones.filter { CPU_LIKE.containsMatchIn(it.first) }.maxByOrNull { it.second } ?: zones.firstOrNull()
+        val cpuTemp = pick?.second ?: old.cpuTemp
+        val zoneList = zones.sortedByDescending { it.second }
+
+        // RAM
+        val am = ctx.getSystemService(ActivityManager::class.java)
+        val mi = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        val totalMb = mi.totalMem / 1048576
+        val usedMb = totalMb - mi.availMem / 1048576
+        val ramPct = if (totalMb > 0) usedMb * 100f / totalMb else 0f
+
+        // Battery
+        val full = kv["/sys/class/power_supply/battery/charge_full"]?.toLongOrNull() ?: 0L
+        val design = kv["/sys/class/power_supply/battery/charge_full_design"]?.toLongOrNull() ?: 0L
+        val cycles = kv["/sys/class/power_supply/battery/cycle_count"]?.toIntOrNull() ?: -1
+        val batt = battery(ctx, full, design, cycles, old.batt)
+
+        // Network speed from interface counters
+        var rx = 0L
+        var tx = 0L
+        for (l in netLines) {
+            val body = l.trim()
+            val i = body.indexOf(':')
+            if (i <= 0 || body.substring(0, i) == "lo") continue
+            val f = body.substring(i + 1).trim().split(Regex("\\s+"))
+            rx += f.getOrNull(0)?.toLongOrNull() ?: 0L
+            tx += f.getOrNull(8)?.toLongOrNull() ?: 0L
+        }
+        val nowT = System.currentTimeMillis()
+        // Real time since the last sample, for the per app heat history. A long gap such as screen off counts as nothing.
+        val elapsed = if (prevT == 0L || nowT <= prevT) 0f else ((nowT - prevT) / 1000f).let { if (it > 30f) 0f else it }
+        var down = old.netDown
+        var up = old.netUp
+        if (prevT != 0L && nowT > prevT && rx >= prevRx && tx >= prevTx) {
+            val dt = (nowT - prevT) / 1000f
+            down = ((rx - prevRx) / dt).toLong()
+            up = ((tx - prevTx) / dt).toLong()
+        }
+        prevRx = rx; prevTx = tx; prevT = nowT
+
+        // Drain rate, 24 hour history and per-app heat
+        BatteryLog.init(ctx)
+        BatteryLog.add(batt.level, batt.charging)
+        CurrentLog.add(batt)
+        Session.tick(ctx, batt.charging, batt.level, screenOn)
+        val fullMah = full / 1000f
+        val fallback = if (fullMah > 0f && batt.ma > 0) (batt.ma / fullMah * 100f) * (if (batt.charging) 1f else -1f) else null
+        AppThermal.record(ctx, cpuTemp, batt.tempC, cpu, elapsed)
+        val free = try { StatFs(Environment.getDataDirectory().path).availableBytes / 1073741824f } catch (e: Exception) { 0f }
+
+        return Snap(
+            cpu = cpu,
+            cores = cores,
+            gov = gov,
+            cpuTemp = cpuTemp,
+            ramPct = ramPct,
+            ramUsedMb = usedMb,
+            ramTotalMb = totalMb,
+            batt = batt,
+            cpuHist = push(cpuH, cpu),
+            tempHist = push(tempH, batt.tempC),
+            currHist = push(currH, batt.ma.toFloat()),
+            ramHist = push(ramH, ramPct),
+            cpuTempHist = push(cTempH, cpuTemp),
+            zones = zoneList,
+            ratePh = BatteryLog.rate() ?: fallback,
+            drain24 = BatteryLog.drain24(),
+            avg24 = BatteryLog.avg24(),
+            netDown = down,
+            netUp = up,
+            deepSleep = deep(),
+            freeGb = free,
+            uptimeSec = if (uptime > 0) uptime else old.uptimeSec
+        )
+    }
+}

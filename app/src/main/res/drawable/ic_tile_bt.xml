@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ashutool - root toolkit for custom ROMs
+  Copyright (C) 2026 Ashutosh Nishad
+  Telegram: @ashutosh_07x (https://t.me/ashutosh_07x)
+
+  Free software under the GNU GPL v3.0 or later, with the attribution terms in NOTICE.
+  Keep this header and the author credit in every copy and modified version.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M7,7.5 L17,16.5 L12,21 V3 L17,7.5 L7,16.5" />
+</vector>
