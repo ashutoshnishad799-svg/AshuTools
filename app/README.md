@@ -8,18 +8,20 @@ Open in Android Studio (JDK 17), sync, run on a rooted device, allow root. On fi
 usage access, overlay, notifications, phone state, call answering and turns on the instant-lock accessibility service.
 
 ## Tabs
-Home, Games, Calls, CPU, Memory, Battery, Thermal, Usage, Apps, Lock, Hide, Network, Tasks, Alerts, Display, Storage, Power, Device, Settings.
+The bottom bar has six groups: Home, Monitor (CPU, Memory, Thermal, Network, Storage, Device), Island (Island, Sound), Games (Games, Calls, Usage), Power (Battery, Power) and More (Apps, Tasks, Lock, Hide, Alerts, Display, Settings).
 Bigger tabs have sub pages:
 - Battery: Drain and history, Use by app, Background apps (restrict, stop on leave, stop on screen off, keep), Charging control,
   Battery saver (deep Doze, screen-off CPU limit, auto saver), Accuracy (capacity estimate, reset stats).
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
-- Games: floating app windows from the game panel open on the right side (left or centre in Windows and apps) with a
-  small control pill: drag to move, full screen and back, close, and More for Mini / Medium / Large, snap to a side,
-  sound off, lock position and screenshot. Needs a ROM with freeform windows, otherwise the app just opens normally.
+- Island: the Dynamic Island. Look (8 themes, 5 edge effects, 4 shapes, roundness, 4 animation feels), Size and place (overall size,
+  width, height, top, left and right, opacity, time open, short message time, show in games and in landscape) and What it shows
+  (calls, music and video with controls, charging, recording, sound mode, notifications). Music and notifications are read through the
+  notification listener, which root allows by itself. With two things at once the second is a small bubble: tap it to swap.
+- Sound: the Sound and Volume tiles, the volume panel (Small, Medium, Big, left or right, closes after 2 to 12 seconds), game panel size and optional glass blur.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
-  floating windows and app shelf, screen recording with a draggable timer pill and a notification Stop button.
+  screen recording with a draggable timer pill and a notification Stop button. The panel has 5G / 4G, Sound, Volume and Island buttons.
   The bar shows in every game and stays there: it comes back after a call, a store popup, screen off and on, or a rotation.
   Games are found by Android's game flag and category, a list of known titles, landscape-only apps with no category,
   and what you add yourself under Add or remove. A window from the phone's own game assistant never counts as leaving the game.

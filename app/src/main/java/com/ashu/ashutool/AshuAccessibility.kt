@@ -127,6 +127,7 @@ class AshuAccessibility : AccessibilityService() {
         }
         val dialers = Safety.dialerPkgs(this)
         if (pkg !in dialers) lastNonDialer = pkg
+        if (pkg != reelPkg) disarmReelTick()
         modes(pkg)
         Fg.set(pkg)
         if (pkg in dialers && LockStore.bool(this, "calls_nofull", false) && Calls.recentActive() &&
@@ -251,20 +252,63 @@ class AshuAccessibility : AccessibilityService() {
     }
 
     // ---- reels blocker
+    /** When Reels was last really seen on screen, or 0 when it is not on screen. Time only counts from one look to the next. */
+    private var reelSeenAt = 0L
+    private var reelPkg: String? = null
+    private val reelTick = object : Runnable {
+        override fun run() { reelPkg?.let { scanReels(it) } }
+    }
+
+    /** While Reels is open and a daily limit is counting, look again every two seconds, so time is counted and the limit is reached on time even if the app sends no events. */
+    private fun armReelTick(pkg: String) {
+        reelPkg = pkg
+        handler.removeCallbacks(reelTick)
+        handler.postDelayed(reelTick, 2000L)
+    }
+
+    private fun disarmReelTick() {
+        reelPkg = null
+        reelSeenAt = 0L
+        handler.removeCallbacks(reelTick)
+    }
+
+    /** A view only counts when it is really on screen and big, so pages the app loads in advance, or a small Shorts shelf in the home feed, never count. */
+    private fun bigOnScreen(n: AccessibilityNodeInfo): Boolean {
+        if (!n.isVisibleToUser) return false
+        val r = Rect()
+        n.getBoundsInScreen(r)
+        val dm = resources.displayMetrics
+        return r.height() >= dm.heightPixels * 0.45f && r.width() >= dm.widthPixels * 0.6f
+    }
+
+    private fun reelsVisible(root: AccessibilityNodeInfo, pkg: String, ids: Ids): Boolean {
+        for (id in ids.viewer) {
+            if (root.findAccessibilityNodeInfosByViewId("$pkg:id/$id").any { bigOnScreen(it) }) return true
+        }
+        for (t in ids.tab) {
+            if (root.findAccessibilityNodeInfosByViewId("$pkg:id/$t").any { it.isSelected && it.isVisibleToUser }) return true
+        }
+        return false
+    }
+
     private fun scanReels(pkg: String) {
         // The switch is checked here as well. Content events can still arrive for a while after it was turned off.
-        if (!reelOn(pkg)) return
+        if (!reelOn(pkg)) { disarmReelTick(); return }
         val now = SystemClock.elapsedRealtime()
-        if (now - reelAt < 700) return
-        val dt = (now - reelAt).coerceAtMost(3000L) / 1000f
+        if (now - reelAt < 600) return
         reelAt = now
+        if (!Monitor.screenOn) { disarmReelTick(); return }
         val ids = REELS[pkg] ?: return
         val root = rootInActiveWindow ?: return
-        var visible = ids.viewer.any { root.findAccessibilityNodeInfosByViewId("$pkg:id/$it").isNotEmpty() }
-        if (!visible) visible = ids.tab.any { t -> root.findAccessibilityNodeInfosByViewId("$pkg:id/$t").any { it.isSelected } }
-        if (!visible) return
-        if (LockStore.int(this, "reel_mode", 0) == 1) {
-            if (ReelStats.add(this, dt) < LockStore.int(this, "reel_limit", 15) * 60) return
+        // The window in front must be this app, otherwise an event from a window behind it would count
+        if (root.packageName?.toString() != pkg) { disarmReelTick(); return }
+        if (!reelsVisible(root, pkg, ids)) { disarmReelTick(); return }
+        val dt = if (reelSeenAt != 0L && now - reelSeenAt <= 4000L) (now - reelSeenAt) / 1000f else 0f
+        reelSeenAt = now
+        val limitMode = LockStore.int(this, "reel_mode", 0) == 1
+        if (limitMode) {
+            val used = if (dt > 0f) ReelStats.add(this, dt) else ReelStats.used(this)
+            if (used < LockStore.int(this, "reel_limit", 15) * 60) { armReelTick(pkg); return }
         }
         if (now - reelBlockAt < 1500) return
         reelBlockAt = now
@@ -275,7 +319,10 @@ class AshuAccessibility : AccessibilityService() {
             if (clicked) break
         }
         if (!clicked) performGlobalAction(GLOBAL_ACTION_BACK)
-        toast(this, "Reels blocked")
+        disarmReelTick()
+        val why = if (limitMode) "Daily limit reached" else "Blocked"
+        if (LockStore.bool(this, "isl_on", true)) IslandHub.flashBlocked(this, if (pkg == IG) "Reels blocked" else "Shorts blocked", why)
+        else toast(this, "Reels blocked")
     }
 
     // ---- dialer code typed on the pad opens the vault without pressing call
@@ -313,6 +360,7 @@ class AshuAccessibility : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         connected = false
         instance = null
+        disarmReelTick()
         hideLock()
         guard.clear()
         try { unregisterReceiver(screenOff) } catch (_: Exception) {}

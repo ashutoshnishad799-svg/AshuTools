@@ -111,6 +111,11 @@ fun NotifyPage() {
         item { PrefSwitch("n_ram", true, Icons.Outlined.DeveloperBoard, GViolet, "RAM use", "Percent of memory in use", bump) }
         item { PrefSwitch("n_batt", true, Icons.Outlined.BatteryChargingFull, GGreen, "Battery", "Level, current and temperature", bump) }
         item { PrefSwitch("n_drain", true, Icons.Outlined.BatteryAlert, GFire, "Drain rate", "Percent per hour now and over the last 24 hours", bump) }
+        item { PrefSwitch("n_idle", true, Icons.Outlined.Bedtime, GViolet, "Idle drain", "Battery used per hour while the screen is off, and how deep the phone slept", bump) }
+        item { PrefSwitch("n_screen", true, Icons.Outlined.PhoneAndroid, GBlue, "Screen time and charge used", "Screen on and off since you unplugged, and the milliamp hours used", bump) }
+        item { PrefSwitch("n_active", false, Icons.Outlined.LightMode, GFire, "Active drain", "Average current while the screen is on", bump) }
+        item { PrefSwitch("n_remain", true, Icons.Outlined.Timer, GGreen, "Time left", "Time left at the current rate, or time to full while charging", bump) }
+        item { PrefSwitch("n_watt", true, Icons.Outlined.Bolt, GTeal, "Power in watts", "Charging or discharging power next to the current", bump) }
         item { PrefSwitch("n_net", true, Icons.Outlined.NetworkCheck, GBlue, "Network speed", "Download and upload", bump) }
         item { PrefSwitch("n_sleep", false, Icons.Outlined.Bedtime, GViolet, "Deep sleep and uptime", "How much of the time the phone slept", bump) }
         item { PrefSwitch("n_storage", false, Icons.Outlined.SdStorage, GCyan, "Free storage", "Space left on data", bump) }

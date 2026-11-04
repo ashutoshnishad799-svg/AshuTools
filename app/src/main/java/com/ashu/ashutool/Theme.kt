@@ -54,7 +54,9 @@ private fun c(v: Long) = Color(v)
 object Palette {
     /** Index into [themes]. Indexes 0 to 2 are kept stable across versions. */
     var mode by mutableIntStateOf(0)
-    var animated by mutableStateOf(false)
+    var animated by mutableStateOf(true)
+    /** Real blur of what is behind the floating panels, on Android 12 and newer. See [Glassy]. */
+    var realBlur by mutableStateOf(false)
 
     /** When on, the theme follows the system: Slate in dark mode, Slate light in light mode. */
     var auto by mutableStateOf(true)
@@ -115,7 +117,15 @@ object Palette {
             Grad(c(0xFFA78BFA), c(0xFF60A5FA)), Grad(c(0xFFF472B6), c(0xFFA78BFA)), 0.17f, 0.06f, 0.46f, 0.06f, 0.26f, true),
         Pal("Nebula light", false, false, c(0xFF1E1B4B), c(0xFF5B5780), c(0xFFFFFFFF), c(0xFF7C3AED),
             c(0xFFF6F3FF), c(0xFFEDE7FF), c(0xFFEAF2FF), c(0xFFA78BFA), c(0xFFF9A8D4), c(0xFF93C5FD), 0.45f,
-            Grad(c(0xFF8B5CF6), c(0xFF3B82F6)), Grad(c(0xFFEC4899), c(0xFF8B5CF6)), 0.10f, 0.04f, 0.26f, 0.06f, 0.14f, true)
+            Grad(c(0xFF8B5CF6), c(0xFF3B82F6)), Grad(c(0xFFEC4899), c(0xFF8B5CF6)), 0.10f, 0.04f, 0.26f, 0.06f, 0.14f, true),
+        // Cool teal and violet light behind very clear glass
+        Pal("Liquid", true, false, c(0xFFF0FBFF), c(0xFF9FB8C9), c(0xFF0B1B26), c(0xFF67E8F9),
+            c(0xFF040A12), c(0xFF081C2A), c(0xFF0A1230), c(0xFF06B6D4), c(0xFF8B5CF6), c(0xFF14B8A6), 0.46f,
+            Grad(c(0xFF67E8F9), c(0xFFA78BFA)), Grad(c(0xFF5EEAD4), c(0xFF60A5FA)), 0.19f, 0.07f, 0.50f, 0.07f, 0.28f, true),
+        // Warm amber and rose light, dark glass
+        Pal("Gold", true, false, c(0xFFFFF8EC), c(0xFFCDB894), c(0xFF1A1308), c(0xFFFBBF24),
+            c(0xFF090705), c(0xFF1B1209), c(0xFF140B10), c(0xFFF59E0B), c(0xFFEF4444), c(0xFF8B5CF6), 0.40f,
+            Grad(c(0xFFFDE047), c(0xFFF59E0B)), Grad(c(0xFFFCA5A5), c(0xFFFBBF24)), 0.16f, 0.06f, 0.44f, 0.06f, 0.24f, true)
     )
 
     /** Themes used when following the system. Slate is the older default and is still in the list. */
@@ -126,14 +136,15 @@ object Palette {
     const val PURE_BLACK = 1
     const val PURE_WHITE = 2
 
-    /** Following the system: pure black in dark mode, pure white in light mode. Nebula stays in the list to pick. */
-    val cur: Pal get() = if (auto) themes[if (systemDark) PURE_BLACK else PURE_WHITE] else themes[mode.coerceIn(0, themes.size - 1)]
+    /** Following the system: Nebula in dark mode and Nebula light in light mode. Pure black and pure white stay in the list to pick. */
+    val cur: Pal get() = if (auto) themes[if (systemDark) NEBULA else NEBULA_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
 
     fun load(ctx: Context) {
         mode = LockStore.int(ctx, "theme", PURE_BLACK).coerceIn(0, themes.size - 1)
         auto = LockStore.bool(ctx, "theme_auto", true)
         systemDark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        animated = LockStore.bool(ctx, "anim_bg", false)
+        animated = LockStore.bool(ctx, "anim_bg", true)
+        realBlur = LockStore.bool(ctx, "glass_blur", false)
         glass = LockStore.int(ctx, "glass_x", 100).coerceIn(60, 160) / 100f
     }
 }

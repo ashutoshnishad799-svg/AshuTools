@@ -148,8 +148,7 @@ fun GamesPage() = SubHost(
         when (k) {
             "sidebar" -> SidebarSub(back)
             "style" -> StyleSub(back)
-            "mode" -> ModeSub(back)
-            else -> WindowsSub(back)
+            else -> ModeSub(back)
         }
     }
 )
@@ -277,7 +276,6 @@ private fun GamesMain(open: (String) -> Unit) {
         item { NavRow(Icons.Outlined.Widgets, GTeal, "Sidebar", "Size, position, edge and opacity") { open("sidebar") } }
         item { NavRow(Icons.Outlined.AutoAwesome, GViolet, "Bar style", "Pick a design and colour for the bar") { open("style") } }
         item { NavRow(Icons.Outlined.Speed, GFire, "Game mode", "Performance, do not disturb, popups") { open("mode") } }
-        item { NavRow(Icons.Outlined.Layers, GBlue, "Windows and apps", "Open apps in a window from the sidebar") { open("windows") } }
     }
 
     if (pick) AlertDialog(
@@ -430,97 +428,6 @@ private fun ModeSub(back: () -> Unit) {
     }
 }
 
-@Composable
-private fun WindowsSub(back: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val apps by rememberApps()
-    var shelf by remember { mutableStateOf(LockStore.set(ctx, "g_shelf")) }
-    var side by remember { mutableIntStateOf(LockStore.int(ctx, "g_float_side", 1)) }
-    var ff by remember { mutableStateOf<Boolean?>(null) }
-    var uiCrash by remember { mutableStateOf(Windows.savedCrash(ctx)) }
-    LaunchedEffect(Unit) { ff = withContext(Dispatchers.IO) { Windows.freeformOn() } }
-    Page("Windows and apps", "Open apps over your game", GBlue, Icons.Outlined.Layers, onBack = back) {
-        item { PrefSwitch("g_float", true, Icons.Outlined.Layers, GBlue, "Floating window", "Open shelf apps in a window when your ROM supports it") }
-        item {
-            Glass {
-                Text("Where the window opens", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("This is where a window opens the first time. After that it opens where you left it. Move it with the bar under it and resize it with the corner grip.", color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Left", "Right", "Center").forEachIndexed { i, name ->
-                        Chip(name, side == i, GBlue) { side = i; LockStore.setInt(ctx, "g_float_side", i) }
-                    }
-                }
-            }
-        }
-        item {
-            Glass {
-                Text("Freeform windows", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Status: ${when (ff) { true -> "on"; false -> "off"; null -> "checking" }}. Ashutool turns these on by itself when it starts and before it opens a window. " +
-                        "Some ROMs need a restart after the first time.",
-                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
-                )
-                GradButton("Enable freeform windows", GBlue) {
-                    scope.launch {
-                        val ok = withContext(Dispatchers.IO) { Windows.enableFreeform() }
-                        ff = withContext(Dispatchers.IO) { Windows.freeformOn() }
-                        toast(ctx, if (ok) "Enabled. Reboot if windows do not float" else "Could not enable")
-                    }
-                }
-            }
-        }
-        item { PrefSwitch("fw_lock_rot", false, Icons.Outlined.ScreenLockRotation, GBlue, "Lock rotation for windows", "Keep the screen from turning while a window is open. Inside a game this is always done for you.") }
-        if (uiCrash.isNotEmpty()) item {
-            Glass {
-                Text("System UI restarted", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "The system UI restarted right after a window was opened. Ashutool kept the crash log. Copy it and send it to the developer, it shows exactly what your ROM dislikes.",
-                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
-                )
-                GlassButton(Icons.Outlined.ContentCopy, "Copy crash log") {
-                    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(Credits.APP, uiCrash))
-                    toast(ctx, "Crash log copied")
-                }
-                Spacer(Modifier.height(10.dp))
-                GlassButton(Icons.Outlined.Delete, "Clear") { Windows.clearCrash(ctx); uiCrash = "" }
-            }
-        }
-        item {
-            Glass {
-                Text("Something looks wrong?", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "If a window layout went wrong, for example the home screen looks cut off, this removes all window bars, gives the screen rotation back and puts the home screen in full screen.",
-                    color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp)
-                )
-                GradButton("Reset windows", GRed, Icons.Outlined.RestartAlt) {
-                    scope.launch {
-                        withContext(Dispatchers.IO) { FloatWindows.reset(ctx) }
-                        toast(ctx, "Windows reset")
-                    }
-                }
-            }
-        }
-        item { SectionTitle("Sidebar shelf", "${shelf.size} chosen") }
-        item { Glass { Hint("Chosen apps show in the sidebar under Open in window. With none chosen, your games are shown.") } }
-        items((apps ?: emptyList()).filter { !it.system && !it.guarded }, key = { it.pkg }) { a ->
-            Glass(Modifier.animateItem(), radius = 18.dp, pad = 0.dp) {
-                AppHead(a) {
-                    Switch(
-                        checked = a.pkg in shelf,
-                        onCheckedChange = { on ->
-                            val n = if (on) shelf + a.pkg else shelf - a.pkg
-                            shelf = n
-                            LockStore.setSet(ctx, "g_shelf", n)
-                        },
-                        colors = glassSwitchColors()
-                    )
-                }
-            }
-        }
-    }
-}
-
 // ----------------------------------------------------------------- Settings
 
 @Composable
@@ -662,7 +569,7 @@ private fun LookSub(back: () -> Unit) {
     fun pick(i: Int) { Palette.auto = false; Palette.mode = i; LockStore.setBool(ctx, "theme_auto", false); LockStore.setInt(ctx, "theme", i) }
     Page("Appearance", Palette.cur.name, GViolet, Icons.Outlined.ColorLens, onBack = back) {
         item {
-            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Pure black in dark mode, pure white in light mode", Palette.auto) {
+            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Nebula in dark mode, Nebula light in light mode", Palette.auto) {
                 Palette.auto = it
                 LockStore.setBool(ctx, "theme_auto", it)
             }
@@ -690,7 +597,7 @@ private fun LookSub(back: () -> Unit) {
             }
         }
         item {
-            SwitchRow(Icons.Outlined.AutoAwesome, GPink, "Animated background", "Drifting glow on gradient themes. Uses more battery", anim) {
+            SwitchRow(Icons.Outlined.AutoAwesome, GPink, "Animated background", "Drifting glow on gradient themes. Only runs while the app is open", anim) {
                 anim = it
                 Palette.animated = it
                 LockStore.setBool(ctx, "anim_bg", it)
@@ -879,11 +786,6 @@ private fun AboutSub(back: () -> Unit) {
                         val root = withContext(Dispatchers.IO) { Root.isGranted() }
                         copy(CrashLog.debugInfo(ctx, root), "Debug info copied")
                     }
-                }
-                val uiCrash = remember { Windows.savedCrash(ctx) }
-                if (uiCrash.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    GlassButton(Icons.Outlined.BugReport, "Copy system UI crash") { copy(uiCrash, "System UI crash copied") }
                 }
                 val c = crash
                 if (c != null) {

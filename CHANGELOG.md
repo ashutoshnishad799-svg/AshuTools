@@ -1,5 +1,65 @@
 # Changelog
 
+## 3.0.0 - redesign, Dynamic Island, sound controls
+Made by Ashutosh Nishad, Telegram @ashutosh_07x
+
+### New look
+- The whole design system was redone: Nebula is the default theme (dark and light, following the system), larger and
+  clearer glass cards with light on the top edge, a floating glass navigation bar whose current tab opens into a lit pill
+  with a spring, bigger page titles, rounder buttons. Two new themes: Liquid and Gold. The animated background is on by
+  default and only runs while the app is open.
+- The bottom bar now has Home, Monitor, Island, Games, Power and More. Tools and Settings moved into More.
+- Home: Quick controls (5G / 4G, Sound, Volume) and the Dynamic Island switch are at the top.
+
+### Dynamic Island (new, Island tab)
+- A shape at the top of the screen that works over every app, in games and over full screen video.
+- Shows: calls (caller name, timer, Answer, Decline, Speaker, Mute, End), music and video from any player (YouTube,
+  Spotify, browsers and so on, with cover, progress, previous, play, next), charging, fully charged and low battery,
+  screen recording (timer, stop), sound mode changes, 5G / 4G changes, new notifications, and "Reels blocked".
+- Two things at once: the more important one is the big shape and the other is a small bubble beside it. Tap the
+  bubble and it opens while the old one becomes the bubble, with a spring animation. Tap the big shape to open it,
+  swipe up to close, press and hold to open the app.
+- Eight themes (Classic, Glass, Aurora, Neon, Sunset, Ocean, Mint, Light), edge effects (None, Glow, Pulse, Sweep,
+  Rainbow), four shapes (Pill, Notch, Squircle, Tab), roundness, four animation feels (Bouncy, Smooth, Snappy, Elastic),
+  overall size, width, height, distance from the top, left and right, opacity, how long it stays open, and a switch for
+  each thing it shows. Everything applies live. Try buttons show a message, charging, 5G, and two at once.
+- The window is always exactly as big as the island, so the empty space around it never blocks a touch. It grows before
+  the island grows and shrinks after the island shrank.
+- Nothing runs while the screen is off.
+
+### Quick settings tiles
+- Only three tiles now: 5G / 4G, Sound and Volume. The other tiles (Mobile data, Wi-Fi, Bluetooth, Airplane,
+  Location, Dark mode, Show touches, No animations, Stay awake, Battery saver, Game bar, FPS, Screen record and
+  Floating apps) were removed. Android has its own for most of them, and the game panel keeps the game ones.
+- 5G / 4G is fast now. Before, every tap started a new Java process as root twice, once to read and once to write.
+  Now one root process stays running and answers in a few milliseconds. The tile draws the new state the moment you tap,
+  sends the change in order with any other taps, and never repaints an old answer over it. The state is remembered, so
+  the tile is right as soon as the panel opens. The picture on the tile is now "5G" or "4G", not a signal icon.
+- Sound: one tile for ring, vibrate and silent. One tap goes to the next. A bell for ring, a bell with a cross for
+  silent, a vibrating phone for vibrate. It uses the audio service directly, so it is instant. Do Not Disturb access
+  for silent is granted through root when the system asks.
+- Volume: opens the Ashutool volume panel. It can be Small (one slider), Medium (media, ring, alarm) or Big
+  (larger, more sliders), on the left or the right, with a ring mode button, and it closes by itself.
+
+### Game sidebar
+- Floating windows and the app shelf are removed completely, in games and outside, with their settings, their tile,
+  the freeform system switches and the code behind them.
+- The panel is new: glass that follows the theme, live numbers in chips, a profile switch, and more tools: 5G / 4G,
+  Sound, Volume panel and Dynamic Island, next to DND, Popups, FPS, Clear RAM, Shot, Record and Touches.
+  Panel size Small, Normal or Large. New handle style: Gradient. Optional real blur on Android 12 and newer.
+
+### Reels and Shorts blocker
+- It could block before the limit was really used. Fixed: a Reels view only counts when it is really on screen and
+  large (pages the app loads in advance and the small Shorts shelf in the home feed no longer count), the window in
+  front must be the app, time only counts from one look to the next while Reels stays open (the first look after
+  you open it adds nothing, a gap over 4 seconds starts a new stretch), and a check every 2 seconds keeps the count
+  and the limit exact even when the app sends no events. Blocking shows a short message on the island.
+
+### Battery notification
+- New lines: Idle drain (average milliamps while the screen is off, percent per hour and deep sleep), screen on and
+  off time with the charge used since unplugging, active drain (optional), time left or time to full, and power in
+  watts. Each has its own switch in Alerts.
+
 ## 2.1.0 - stability, tiles and battery pages
 Made by Ashutosh Nishad, Telegram @ashutosh_07x
 

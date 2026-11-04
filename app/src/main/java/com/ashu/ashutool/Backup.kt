@@ -23,7 +23,7 @@ object Backup {
     private const val DIR = "/sdcard/Download/Ashutool"
     private const val FILE = "$DIR/settings-backup.json"
 
-    private val KEEP = Regex("^(g_|n_|calls_|bs_|cl_|reel_|theme|anim_bg|glass_x|limits_system|lock_blur|bg_all_off|protect_self|use_a11y|swap_devs).*")
+    private val KEEP = Regex("^(g_|n_|calls_|bs_|cl_|reel_|theme|anim_bg|glass_x|limits_system|lock_blur|bg_all_off|protect_self|use_a11y|swap_devs|isl_|vp_|glass_blur|ui_).*")
     private val SKIP = Regex(".*(prev|orig|state).*")
 
     private fun wanted(k: String) = KEEP.matches(k) && !SKIP.matches(k)

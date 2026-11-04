@@ -646,6 +646,52 @@ object GameMode {
 
 // ================================================================= Notification
 
+private fun hoursText(h: Float): String {
+    val m = (h * 60f).toInt().coerceIn(0, 99 * 60)
+    return "${m / 60}h ${m % 60}m"
+}
+
+/**
+ * Extra battery lines for the notification, all worked out from numbers Ashutool already keeps:
+ *  - Idle drain: the average current while the screen was off since the last unplug, and what that is per hour
+ *  - Screen time: screen on and screen off since the last unplug, and the charge used
+ *  - Active drain: the average current while the screen was on
+ *  - Time left, or time to full, at the current rate
+ */
+private fun batteryExtras(ctx: Context, s: Snap): List<String> {
+    val out = ArrayList<String>()
+    val b = s.batt
+    val sv = try { Session.view(ctx) } catch (e: Exception) { null }
+    val cap = if (b.estMah > 0) b.estMah else b.designMah
+    if (sv != null && !sv.charging) {
+        val offH = sv.offMs / 3_600_000f
+        val onH = sv.onMs / 3_600_000f
+        if (LockStore.bool(ctx, "n_idle", true)) {
+            val deep = if (sv.offMs > 0L) (sv.deepMs * 100f / sv.offMs).toInt() else 0
+            out += if (sv.hasMah && offH >= 0.03f) {
+                val ma = sv.offMah / offH
+                "Idle drain ${ma.toInt()} mA" + (if (cap > 0) " (${"%.1f".format(ma / cap * 100f)}%/h)" else "") + "   deep sleep $deep%"
+            } else if (sv.offMs > 0L) "Idle drain measuring   deep sleep $deep%"
+            else "Idle drain is measured while the screen is off"
+        }
+        if (LockStore.bool(ctx, "n_screen", true)) {
+            val used = if (sv.hasMah) "   used ${sv.mah.toInt()} mAh" else ""
+            out += "Screen on ${fmtDuration(sv.onMs)}   off ${fmtDuration(sv.offMs)}$used"
+        }
+        if (LockStore.bool(ctx, "n_active", false) && sv.hasMah && onH >= 0.03f) {
+            out += "Active drain ${(sv.onMah / onH).toInt()} mA while the screen is on"
+        }
+    }
+    if (LockStore.bool(ctx, "n_remain", true)) {
+        val r = s.ratePh
+        if (r != null && Math.abs(r) > 0.05f) {
+            out += if (r < 0f) "About ${hoursText(b.level / -r)} left at this rate"
+            else if (b.level < 100) "About ${hoursText((100 - b.level) / r)} to full" else "Fully charged"
+        }
+    }
+    return out
+}
+
 /** Title and body for the live notification. Used by the service and by the preview card. */
 fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
     val top = mutableListOf<String>()
@@ -655,7 +701,8 @@ fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
     val rows = mutableListOf<String>()
     if (LockStore.bool(ctx, "n_batt", true)) {
         val b = s.batt
-        rows += "Battery ${b.level}%   ${b.ma} mA   ${"%.1f".format(b.tempC)}\u00B0C"
+        val watt = if (LockStore.bool(ctx, "n_watt", true) && b.mv > 0) "   ${"%.1f".format(Math.abs(b.ma) * b.mv / 1_000_000f)} W" else ""
+        rows += "Battery ${b.level}%   ${b.ma} mA   ${"%.1f".format(b.tempC)}\u00B0C$watt"
     }
     if (LockStore.bool(ctx, "n_drain", true)) {
         val r = s.ratePh
@@ -666,6 +713,7 @@ fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
         }
         rows += "Rate $now   24h used ${"%.0f".format(s.drain24)}% (${"%.1f".format(s.avg24)}%/h)"
     }
+    rows += batteryExtras(ctx, s)
     if (LockStore.bool(ctx, "n_net", true)) rows += "Down ${fmtSpeed(s.netDown)}   Up ${fmtSpeed(s.netUp)}"
     if (LockStore.bool(ctx, "n_sleep", false)) rows += "Deep sleep ${s.deepSleep}%   Uptime ${Sys.fmtUptime(s.uptimeSec)}"
     if (LockStore.bool(ctx, "n_storage", false)) rows += "Free storage ${"%.1f".format(s.freeGb)} GB"
@@ -743,185 +791,6 @@ object BgControl {
         else fl.filter { (it.value and 4) != 0 }.keys.filter { Safety.validPkg(it) && !Safety.isProtected(ctx, it) }
         if (list.isNotEmpty()) Root.ok(*list.map { "am force-stop $it" }.toTypedArray())
         return list.size
-    }
-}
-
-// ================================================================ Floating windows
-
-object Windows {
-    /** The three system switches that let an app run in a floating window. */
-    fun enableFreeform(): Boolean = Root.ok(
-        "settings put global enable_freeform_support 1",
-        "settings put global force_resizable_activities 1",
-        "settings put global enable_non_resizable_multi_window 1"
-    )
-
-    /** True when all three switches are already on. One shell call, so it is cheap enough to run before every open. */
-    fun freeformOn(): Boolean {
-        val v = Root.run(
-            "settings get global enable_freeform_support",
-            "settings get global force_resizable_activities",
-            "settings get global enable_non_resizable_multi_window"
-        ).map { it.trim() }
-        return v.size >= 3 && v.take(3).all { it == "1" }
-    }
-
-    /**
-     * Makes sure the system allows floating windows. With the switches off, `am start --windowingMode 5` is quietly
-     * ignored and the app opens full screen, which is the "app opens without a window" problem.
-     * Returns true when something had to be changed, so the caller can give the system a moment to apply it.
-     */
-    fun ensureFreeform(): Boolean = if (freeformOn()) false else enableFreeform()
-
-    /** What `am start` printed the last time. Shown in the debug info. */
-    @Volatile var lastStart: String = ""
-
-    private val startError = Regex("Error type|Error:|Exception|Permission Denial|unknown option|does not exist", RegexOption.IGNORE_CASE)
-
-    /** `am start` can exit with success after printing an error, so its text is read too. The "Starting:" line is skipped, it only repeats the app name. */
-    private fun started(lines: List<String>): Boolean {
-        val text = lines.filterNot { it.trim().startsWith("Starting:") }.joinToString(" ").trim()
-        lastStart = lines.joinToString(" ").trim().take(160)
-        return lines.isNotEmpty() && !startError.containsMatchIn(text)
-    }
-
-    /** Opens an app in a floating window when the ROM supports freeform, otherwise normally. */
-    fun open(ctx: Context, pkg: String, floating: Boolean): Boolean {
-        if (!Safety.validPkg(pkg)) return false
-        val comp = ctx.packageManager.getLaunchIntentForPackage(pkg)?.component ?: return false
-        val c = Root.q(comp.flattenToShortString())
-        if (floating && started(Root.out("am start --windowingMode 5 -n $c"))) return true
-        return started(Root.out("am start -n $c"))
-    }
-
-    /** Why the last window action did or did not work. Shown in the debug info so a ROM that behaves differently can be understood. */
-    @Volatile var lastDiag: String = ""
-
-    /** A task of an app, and whether it is floating. Only floating tasks may ever be moved or resized. */
-    class TaskRef(val id: Int, val floating: Boolean)
-
-    /**
-     * The newest task of [pkg], or null. Three views of the activity manager are tried, because their lines look
-     * different on each Android version.
-     * The task id is only the number right after "Task{hash #". Other # numbers on the same line, such as the
-     * place in the recents list, are not task ids. Taking one of those moved the launcher by mistake once.
-     * Home and recents tasks are never returned.
-     * From Android 12 a task counts as floating only when its line says mode=freeform. A line without a mode is not
-     * guessed to be floating, because resizing a full screen task is exactly what upsets the system UI.
-     */
-    fun task(pkg: String): TaskRef? {
-        if (!Safety.validPkg(pkg)) return null
-        val q = Root.q(pkg)
-        // Cheapest view first. The next one is only asked when the one before found no task.
-        val cmds = listOf(
-            "dumpsys activity activities | grep -E 'Task(Record)?\\{' | grep -F $q | head -n 8",
-            "dumpsys activity recents | grep -E 'Task(Record)?\\{' | grep -F $q | head -n 8",
-            "am stack list 2>/dev/null | grep -F $q | head -n 8"
-        )
-        val a = Regex("""Task(?:Record)?\{\S+\s+#(\d+)\b[^\n]*?[ :=/]${Regex.escape(pkg)}(?![\w.])""")
-        val b = Regex("""taskId=(\d+):?\s+${Regex.escape(pkg)}/""")
-        val mode = Regex("""(?:\bmode|\bwindowingMode)=([A-Za-z][\w-]*)""")
-        val old = Build.VERSION.SDK_INT < 31
-        var best: TaskRef? = null
-        var any = false
-        var firstLine = ""
-        for (cmd in cmds) {
-            val lines = Root.run(cmd)
-            if (lines.isNotEmpty()) { any = true; if (firstLine.isEmpty()) firstLine = lines.first() }
-            for (line in lines) {
-                val id = (a.find(line) ?: b.find(line))?.groupValues?.get(1)?.toIntOrNull() ?: continue
-                if (line.contains("type=home") || line.contains("type=recents")) continue
-                val m = mode.find(line)?.groupValues?.get(1)
-                // Before Android 12 many lines carry no mode. There a line that does not say fullscreen was started as floating.
-                val floating = m == "freeform" || (m == null && old && !line.contains("fullscreen"))
-                if (floating) { best = TaskRef(id, true); break }
-                if (best == null) best = TaskRef(id, false)
-            }
-            if (best != null) break
-        }
-        lastDiag = when {
-            best != null -> "task ${best.id}${if (best.floating) " floating" else " not floating"}"
-            !any -> "the activity manager listed nothing for $pkg"
-            else -> "no task number in: ${firstLine.take(110)}"
-        }
-        return best
-    }
-
-    fun taskId(pkg: String): Int? = task(pkg)?.id
-
-    /** Puts the home screen back in full screen. Used by Reset windows if a window layout went wrong. */
-    fun resetHome(): Boolean =
-        Root.ok("am start --windowingMode 1 -a android.intent.action.MAIN -c android.intent.category.HOME")
-
-    /** True if the app has a running process. Used to remove the window bar after the app was closed. */
-    fun running(pkg: String): Boolean =
-        Safety.validPkg(pkg) && Root.run("pidof ${Root.q(pkg)}").any { it.isNotBlank() }
-
-    @Volatile private var commaForm = false
-
-    /** Moves and resizes a floating task. Android has two ways to write the bounds, so the one that works is remembered. */
-    fun resize(taskId: Int, r: Rect): Boolean {
-        val bad = Regex("error|exception|unknown", RegexOption.IGNORE_CASE)
-        var out = ""
-        fun attempt(cmd: String): Boolean {
-            out = Root.run("$cmd 2>&1").joinToString(" ").trim()
-            return !bad.containsMatchIn(out)
-        }
-        val spaced = "am task resize $taskId ${r.left} ${r.top} ${r.right} ${r.bottom}"
-        val comma = "am task resize $taskId ${r.left},${r.top},${r.right},${r.bottom}"
-        val first = if (commaForm) comma else spaced
-        val second = if (commaForm) spaced else comma
-        if (attempt(first)) return true
-        if (attempt(second)) { commaForm = !commaForm; return true }
-        lastDiag = "resize said: ${out.take(120)}"
-        return false
-    }
-
-    /** Silences or restores the sound of one app. */
-    fun mute(pkg: String, on: Boolean): Boolean =
-        Safety.validPkg(pkg) && Root.ok("cmd appops set ${Root.q(pkg)} PLAY_AUDIO ${if (on) "ignore" else "default"}")
-
-    fun forceStop(pkg: String): Boolean = Safety.validPkg(pkg) && Root.ok("am force-stop ${Root.q(pkg)}")
-
-    /** Brings a floating window to the front. Not every Android has this command, so a miss is not an error. */
-    fun focus(taskId: Int): Boolean =
-        !Regex("error|exception|unknown", RegexOption.IGNORE_CASE).containsMatchIn(Root.run("am task focus $taskId 2>&1").joinToString(" "))
-
-    /** Whether the ROM says it has the freeform feature. Only used to explain a failure. */
-    fun featureText(): String =
-        Root.run("cmd package has-feature android.software.freeform_window_management 2>&1").firstOrNull()?.trim().orEmpty().take(40)
-
-    // ------------------------------------------------------------ system UI watch
-
-    /** Process number of the system UI. A new number means it crashed or restarted. Empty when it cannot be read. */
-    fun systemUiPid(): String = Root.run("pidof com.android.systemui").firstOrNull()?.trim().orEmpty()
-
-    @Volatile var lastCrash: String = ""
-
-    private fun crashFile(ctx: Context) = java.io.File(ctx.filesDir, "systemui_crash.txt")
-
-    /**
-     * Called a few seconds after a window was opened or moved. If the system UI has a new process number it
-     * crashed, so the crash part of the system log is kept. It is the one thing that tells a ROM's problem
-     * with floating windows apart, and it shows in Settings, About and in Copy debug info.
-     */
-    fun watchSystemUi(ctx: Context, before: String, what: String) {
-        if (before.isEmpty()) return
-        val now = systemUiPid()
-        if (now.isEmpty() || now == before) return
-        val log = Root.run("logcat -b crash -d -t 150 2>&1").joinToString("\n").takeLast(6000)
-        val text = "System UI restarted after: $what\nfreeform feature: ${featureText()}\nstart: $lastStart\n$lastDiag\n\n$log"
-        lastCrash = text
-        try { crashFile(ctx).writeText(text) } catch (_: Exception) {}
-    }
-
-    /** The last system UI crash that was caught, or empty. */
-    fun savedCrash(ctx: Context): String =
-        lastCrash.ifEmpty { try { crashFile(ctx).takeIf { it.exists() }?.readText().orEmpty() } catch (e: Exception) { "" } }
-
-    fun clearCrash(ctx: Context) {
-        lastCrash = ""
-        try { crashFile(ctx).delete() } catch (_: Exception) {}
     }
 }
 

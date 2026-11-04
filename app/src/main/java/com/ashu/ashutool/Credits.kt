@@ -161,10 +161,7 @@ object CrashLog {
         appendLine("Safe mode: ${Guard.safe}")
         appendLine("Games found: ${GameMode.cached.size}")
         if (GameDiag.error.isNotEmpty()) appendLine("Game bar error: ${GameDiag.error}")
-        if (Windows.lastDiag.isNotEmpty()) appendLine("Floating window: ${Windows.lastDiag}")
-        if (Windows.lastStart.isNotEmpty()) appendLine("Window start said: ${Windows.lastStart}")
         if (NetMode.lastRaw.isNotEmpty()) appendLine("5G switch said: ${NetMode.lastRaw}")
-        Windows.savedCrash(ctx).lineSequence().firstOrNull()?.takeIf { it.isNotEmpty() }?.let { appendLine("System UI crash caught: $it") }
     }
 }
 

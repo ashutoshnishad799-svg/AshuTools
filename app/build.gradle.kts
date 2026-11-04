@@ -25,8 +25,8 @@ android {
         applicationId = "com.ashu.ashutool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.1.0"
+        versionCode = 5
+        versionName = "3.0.0"
         // SHA-256 of the author's signing certificate. Set it when building the official release, see README.
         // Left empty, the app reports itself as a community build.
         buildConfigField("String", "CERT_SHA256", "\"${System.getenv("CERT_SHA256") ?: ""}\"")

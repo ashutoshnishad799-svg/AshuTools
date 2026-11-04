@@ -109,7 +109,7 @@ fun Modifier.enter(index: Int, fromX: Float = 0f): Modifier {
 @Composable
 fun Glass(
     modifier: Modifier = Modifier,
-    radius: Dp = 24.dp,
+    radius: Dp = 28.dp,
     pad: Dp = 16.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
@@ -128,6 +128,12 @@ fun Glass(
                             listOf(Color.White.copy(alpha = if (pal.dark) 0.15f else 0.40f), Color.Transparent),
                             start = Offset.Zero, end = Offset(size.width * 0.75f, size.height * 0.75f)
                         )
+                    )
+                    // A thin bright line along the top edge, like light catching the rim of glass
+                    val r = radius.toPx()
+                    drawLine(
+                        Color.White.copy(alpha = if (pal.dark) 0.30f else 0.80f),
+                        Offset(r, 0.7f), Offset(size.width - r, 0.7f), 1.2f
                     )
                 } else Modifier
             )
@@ -190,7 +196,7 @@ fun Page(
                 Spacer(Modifier.width(14.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text(title, color = TextHi, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(title, color = TextHi, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
                 Text(sub, color = TextLo, fontSize = 12.sp)
             }
             if (action != null) {
@@ -402,8 +408,9 @@ fun Chip(text: String, selected: Boolean, grad: Grad = GTeal, onClick: () -> Uni
 @Composable
 fun GradButton(text: String, grad: Grad = GTeal, icon: ImageVector? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier.bounceClick(onClick = onClick).clip(RoundedCornerShape(16.dp)).background(grad.h())
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+        modifier.bounceClick(onClick = onClick).clip(RoundedCornerShape(20.dp)).background(grad.h())
+            .drawBehind { drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.28f), Color.Transparent), endY = size.height * 0.6f)) }
+            .padding(horizontal = 20.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {

@@ -11,17 +11,19 @@ Free and open source, GNU GPL v3.0 or later. See [LICENSE](LICENSE) and [NOTICE]
 - **Monitor:** live CPU, memory, battery, thermal and network numbers, history graphs, app heat.
 - **Control:** CPU governor and frequency, memory and swap, charging limit, app standby and background rules.
 - **Apps:** app limits, reels blocker, app lock with PIN or pattern, hidden apps vault, firewall.
-- **Games:** game launcher, edge game bar with three profiles (standard, performance, battery saver), FPS meter, game mode (nothing is automatic until you turn it on), screen recording,
-  floating app windows on the side you choose, with a small control pill (move, sizes, snap, full screen, sound off, lock, screenshot, close).
+- **Games:** game launcher, edge game bar with three profiles (standard, performance, battery saver), FPS meter, game mode (nothing is automatic until you turn it on), screen recording, a glass side panel with game tools (5G / 4G, sound mode, volume panel, DND, popups, clear RAM, screenshot, record and more).
+- **Dynamic Island:** a shape at the top of the screen over every app for calls, music and video, charging, recording, sound mode, 5G / 4G changes and notifications.
+  Eight themes, edge effects, four shapes, four animation feels, fully adjustable size and place. With two things at once the second is a small bubble, tap it to swap.
 - **Calls:** compact call banner with the caller's name and floating call controls while you play.
-- **Toggles:** 5G / 4G (also a quick settings tile), mobile data, Wi-Fi, airplane, show touches, no animations, stay awake, battery saver, auto rotate. Optional network speed in the status bar.
-- **Looks:** 17 themes, Nebula by default, glass strength, optional animated background.
+- **Quick settings tiles:** 5G / 4G (instant, shows 5G or 4G on the tile), Sound (ring, vibrate and silent in one tile) and Volume (opens the Ashutool volume panel in three sizes). Optional network speed in the status bar.
+- **Battery notification:** level, current and watts, drain rate, idle drain, screen time, time left, and more, each with its own switch.
+- **Looks:** 19 themes, Nebula by default, glass strength, optional animated background, optional real blur on Android 12 and newer.
 - **Backup:** export and import your settings.
 
 More detail is in [app/README.md](app/README.md).
 
 ## Requirements
-- Android 8.0 or newer, rooted (Magisk or KernelSU). Floating windows need a ROM with freeform window support.
+- Android 8.0 or newer, rooted (Magisk or KernelSU). The Dynamic Island needs permission to draw over other apps, which root grants.
 - No internet permission. Ashutool does not send any data anywhere.
 
 ## Install

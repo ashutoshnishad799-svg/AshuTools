@@ -20,6 +20,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -104,7 +105,9 @@ enum class P(val label: String, val icon: ImageVector) {
     STORAGE("Storage", Icons.Outlined.SdStorage),
     POWER("Power", Icons.Outlined.PowerSettingsNew),
     DEVICE("Device", Icons.Outlined.Info),
-    SETTINGS("Settings", Icons.Outlined.Settings)
+    SETTINGS("Settings", Icons.Outlined.Settings),
+    ISLAND("Island", Icons.Outlined.BlurOn),
+    SOUND("Sound", Icons.Outlined.MusicNote)
 }
 
 /**
@@ -114,10 +117,10 @@ enum class P(val label: String, val icon: ImageVector) {
 enum class G(val label: String, val icon: ImageVector, val pages: List<P>) {
     HOME("Home", Icons.Outlined.Home, listOf(P.HOME)),
     MONITOR("Monitor", Icons.Outlined.Memory, listOf(P.CPU, P.MEMORY, P.THERMAL, P.NETWORK, P.STORAGE, P.DEVICE)),
+    ISLAND("Island", Icons.Outlined.BlurOn, listOf(P.ISLAND, P.SOUND)),
     GAMES("Games", Icons.Outlined.SportsEsports, listOf(P.GAMES, P.CALLS, P.USAGE)),
     POWER("Power", Icons.Outlined.BatteryChargingFull, listOf(P.BATTERY, P.POWER)),
-    TOOLS("Tools", Icons.Outlined.Apps, listOf(P.MANAGER, P.PROCESSES, P.LOCK, P.HIDE, P.NOTIFY, P.DISPLAY)),
-    SETTINGS("Settings", Icons.Outlined.Settings, listOf(P.SETTINGS));
+    MORE("More", Icons.Outlined.Apps, listOf(P.MANAGER, P.PROCESSES, P.LOCK, P.HIDE, P.NOTIFY, P.DISPLAY, P.SETTINGS));
 
     companion object {
         fun of(p: P): G = entries.first { p in it.pages }
@@ -167,7 +170,8 @@ fun AshuApp(start: P) {
                     targetState = page,
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
-                        val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                        fun order(x: P) = G.of(x).ordinal * 100 + G.of(x).pages.indexOf(x)
+                        val dir = if (order(targetState) > order(initialState)) 1 else -1
                         (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it * dir / 3 } + fadeIn(tween(260))) togetherWith
                             (slideOutHorizontally(tween(260)) { -it * dir / 4 } + fadeOut(tween(180)))
                     },
@@ -201,6 +205,8 @@ private fun PageHost(p: P, root: Boolean?) {
         P.POWER -> PowerPage()
         P.DEVICE -> DevicePage()
         P.SETTINGS -> SettingsPage()
+        P.ISLAND -> IslandPage()
+        P.SOUND -> SoundPage()
     }
 }
 
@@ -218,40 +224,51 @@ private fun GroupTabs(g: G, page: P, onSelect: (P) -> Unit) {
     }
 }
 
-/** Frosted glass bar with the six groups. Tap one to open it. */
+/**
+ * Floating frosted glass bar with the six groups. The group you are on opens up into a lit pill with its name,
+ * the others stay as icons. The pill grows and shrinks with a spring.
+ */
 @Composable
 fun GlassNavBar(selected: G, onSelect: (G) -> Unit) {
     val pal = Palette.cur
-    val shape = RoundedCornerShape(30.dp)
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    val shape = RoundedCornerShape(34.dp)
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(
             Modifier.fillMaxWidth().clip(shape)
-                .background(Brush.verticalGradient(listOf(pal.tint.copy(alpha = pal.glassTop + 0.07f), pal.tint.copy(alpha = pal.glassBottom + 0.04f))))
-                .border(
-                    1.dp,
-                    Brush.linearGradient(listOf(pal.tint.copy(alpha = pal.bA), pal.tint.copy(alpha = pal.bB), pal.tint.copy(alpha = pal.bC))),
-                    shape
-                )
-                .padding(horizontal = 6.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                .then(Glassy.fill(pal, 0.22f))
+                .border(1.dp, Glassy.stroke(pal), shape)
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            G.entries.forEach { g -> NavItem(g, g == selected, Modifier.weight(1f)) { onSelect(g) } }
+            G.entries.forEach { g ->
+                key(g) {
+                    val wt by animateFloatAsState(if (g == selected) 2.15f else 1f, spring(dampingRatio = 0.78f, stiffness = 420f), label = "navw")
+                    NavItem(g, g == selected, Modifier.weight(wt)) { onSelect(g) }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun NavItem(g: G, sel: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val pal = Palette.cur
     val a by animateFloatAsState(if (sel) 1f else 0f, tween(260), label = "nav")
-    val col = lerp(TextLo, Accent, a)
-    Column(
-        modifier.bounceClick(onClick = onClick).clip(RoundedCornerShape(20.dp))
-            .background(Accent.copy(alpha = 0.16f * a))
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val lit = if (pal.dark) Ink else Color.White
+    val col = lerp(TextLo, lit, a)
+    val shape = RoundedCornerShape(28.dp)
+    Row(
+        modifier.bounceClick(onClick = onClick).clip(shape)
+            .background(Brush.horizontalGradient(listOf(pal.primary.a.copy(alpha = a), pal.primary.b.copy(alpha = a))))
+            .padding(vertical = 11.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(g.icon, g.label, tint = col, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.height(3.dp))
-        Text(g.label, color = col, fontSize = 10.sp, maxLines = 1, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
+        if (a > 0.45f) {
+            Spacer(Modifier.width(5.dp))
+            Text(g.label, color = col.copy(alpha = ((a - 0.45f) / 0.55f).coerceIn(0f, 1f)), fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.Bold)
+        }
     }
 }

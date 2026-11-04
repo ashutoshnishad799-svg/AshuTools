@@ -313,7 +313,7 @@ class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwne
 
 val BarColors = listOf(Color.White, Color(0xFF2DE2C0), Color(0xFF4D8DFF), Color(0xFFFF7AC0), Color(0xFFFFC14D))
 val BarColorNames = listOf("White", "Teal", "Blue", "Pink", "Amber")
-val BarStyles = listOf("Pill", "Dots", "Glass capsule", "Neon line", "Orb", "Edge tab")
+val BarStyles = listOf("Pill", "Dots", "Glass capsule", "Neon line", "Orb", "Edge tab", "Gradient")
 
 private fun DrawScope.chevron(cx: Float, cy: Float, s: Float, edge: Int, col: Color) {
     val p = Path()
@@ -370,6 +370,13 @@ fun DrawScope.drawBar(style: Int, col: Color, a: Float, edge: Int, vw: Float, vl
             drawCircle(Brush.linearGradient(listOf(c.copy(alpha = 0.55f * a), c.copy(alpha = 0.18f * a))), d / 2f, ctr)
             drawCircle(c, d / 2f, ctr, style = Stroke(2.2f))
             drawCircle(c, d * 0.11f, ctr)
+        }
+        6 -> {
+            val g = Palette.cur.primary
+            drawRoundRect(
+                Brush.linearGradient(listOf(g.a.copy(alpha = a), g.b.copy(alpha = a)), start = tl, end = Offset(tl.x + bw, tl.y + bh)),
+                tl, rs, rad
+            )
         }
         else -> {
             val r = minOf(bw, bh) / 2f
@@ -470,7 +477,8 @@ class GameSidebar(private val ctx: Context) {
     private fun panelParams(): WindowManager.LayoutParams {
         val d = ctx.resources.displayMetrics.density
         val (sw, sh) = screenSize(ctx)
-        val pw = minOf((324 * d).toInt(), sw - (16 * d).toInt())
+        val scaleDp = when (LockStore.int(ctx, "g_panel", 1)) { 0 -> 292; 2 -> 360; else -> 324 }
+        val pw = minOf((scaleDp * d).toInt(), sw - (16 * d).toInt())
         val ph = if (edge < 2) (sh * 0.92f).toInt() else (sh * 0.66f).toInt()
         val lp = WindowManager.LayoutParams(
             pw, ph, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -485,6 +493,7 @@ class GameSidebar(private val ctx: Context) {
             2 -> Gravity.TOP or Gravity.CENTER_HORIZONTAL
             else -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
         }
+        Glassy.blur(ctx, lp, 36)
         return lp
     }
 
@@ -655,7 +664,8 @@ class GameSidebar(private val ctx: Context) {
     @Composable
     private fun PanelCard() {
         val s by Monitor.snap.collectAsState()
-        val shape = RoundedCornerShape(24.dp)
+        val pal = Palette.cur
+        val shape = RoundedCornerShape(28.dp)
         val am = remember { ctx.getSystemService(AudioManager::class.java) }
         var vol by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
         var bright by remember {
@@ -665,69 +675,76 @@ class GameSidebar(private val ctx: Context) {
         }
         var fpsOn by remember { mutableStateOf(LockStore.bool(ctx, "g_fps", true)) }
         var touches by remember { mutableStateOf(false) }
+        var net by remember { mutableStateOf(NetMode.known(ctx)) }
+        var ringer by remember { mutableIntStateOf(Ringer.mode(ctx)) }
+        var island by remember { mutableStateOf(LockStore.bool(ctx, "isl_on", true)) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 touches = Root.run("settings get system show_touches").firstOrNull()?.trim() == "1"
             }
+            NetMode.refresh(ctx) { v -> handler.post { if (v != null) net = v } }
         }
         val label = remember(pkg) { appLabel(pkg) }
-        val shelf = remember(pkg) {
-            val set = LockStore.set(ctx, "g_shelf")
-            (if (set.isNotEmpty()) set.toList() else GameMode.cached.toList()).filter { it != pkg && Safety.validPkg(it) }.take(14)
-        }
+        val accent = pal.accent
         Column(
             Modifier.fillMaxSize().padding(8.dp).clip(shape)
-                .background(Brush.verticalGradient(listOf(Color(0xF2111B33), Color(0xF2081724))))
-                .border(1.dp, Color.White.copy(alpha = 0.26f), shape)
+                .then(Glassy.fill(pal, 0.24f))
+                .border(1.dp, Glassy.stroke(pal), shape)
                 .verticalScroll(rememberScrollState())
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(11.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(pkg, 28.dp)
-                Spacer(Modifier.width(8.dp))
+                AppIcon(pkg, 30.dp)
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(label, color = SbText, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Game tools", color = SbLow, fontSize = 10.sp)
+                    Text(label, color = TextHi, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Game tools", color = TextLo, fontSize = 10.sp)
                 }
-                Icon(Icons.Outlined.Close, "Close", tint = SbText, modifier = Modifier.size(22.dp).clickable { closePanel() })
+                Box(
+                    Modifier.bounceClick { closePanel() }.size(32.dp).clip(RoundedCornerShape(50)).background(TextHi.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Outlined.Close, "Close", tint = TextHi, modifier = Modifier.size(18.dp)) }
             }
-            // One compact line of numbers
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat("CPU", "${s.cpu.toInt()}%"); Stat("Temp", "${s.cpuTemp.toInt()}\u00B0"); Stat("RAM", "${s.ramPct.toInt()}%")
-                Stat("Batt", "${s.batt.level}%"); Stat("Down", fmtSpeed(s.netDown))
+            // Live numbers in small glass chips
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Stat("CPU", "${s.cpu.toInt()}%", Modifier.weight(1f))
+                Stat("Temp", "${s.cpuTemp.toInt()}\u00B0", Modifier.weight(1f))
+                Stat("RAM", "${s.ramPct.toInt()}%", Modifier.weight(1f))
+                Stat("Batt", "${s.batt.level}%", Modifier.weight(1f))
+                Stat("Down", fmtSpeed(s.netDown), Modifier.weight(1.3f))
             }
             // Performance profile
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.08f)).padding(3.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(TextHi.copy(alpha = 0.08f)).padding(3.dp),
                 horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Seg("Standard", GameUi.profile == 0, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 0) } }
                 Seg("Performance", GameUi.profile == 1, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 1) } }
-                Seg("Battery saver", GameUi.profile == 2, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 2) } }
+                Seg("Saver", GameUi.profile == 2, Modifier.weight(1f)) { io.launch { GameMode.setProfile(ctx, 2) } }
             }
             if (Calls.state == TelephonyManager.CALL_STATE_OFFHOOK) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MiniTool(Icons.Outlined.Speaker, "Speaker", Calls.speaker, Modifier.weight(1f)) { Calls.setSpeaker(ctx, !Calls.speaker) }
-                    MiniTool(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, "Mute", Calls.muted, Modifier.weight(1f)) { Calls.setMute(ctx, !Calls.muted) }
-                    MiniTool(Icons.Outlined.CallEnd, "End call", false, Modifier.weight(1f)) { io.launch { Calls.end(ctx) } }
+                    MiniTool(Icons.Outlined.Speaker, null, "Speaker", Calls.speaker, Modifier.weight(1f)) { Calls.setSpeaker(ctx, !Calls.speaker) }
+                    MiniTool(if (Calls.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, null, "Mute", Calls.muted, Modifier.weight(1f)) { Calls.setMute(ctx, !Calls.muted) }
+                    MiniTool(Icons.Outlined.CallEnd, null, "End call", false, Modifier.weight(1f)) { io.launch { Calls.end(ctx) } }
                     Spacer(Modifier.weight(1f))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MiniTool(Icons.Outlined.NotificationsOff, "DND", GameUi.dnd, Modifier.weight(1f)) { io.launch { GameMode.setDnd(ctx, !GameUi.dnd) } }
-                MiniTool(Icons.Outlined.NotificationsPaused, "Popups", GameUi.heads, Modifier.weight(1f)) { io.launch { GameMode.setHeadsUp(ctx, !GameUi.heads) } }
-                MiniTool(Icons.Outlined.Speed, "FPS", fpsOn, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.NotificationsOff, null, "DND", GameUi.dnd, Modifier.weight(1f)) { io.launch { GameMode.setDnd(ctx, !GameUi.dnd) } }
+                MiniTool(Icons.Outlined.NotificationsPaused, null, "Popups", GameUi.heads, Modifier.weight(1f)) { io.launch { GameMode.setHeadsUp(ctx, !GameUi.heads) } }
+                MiniTool(Icons.Outlined.Speed, null, "FPS", fpsOn, Modifier.weight(1f)) {
                     fpsOn = !fpsOn
                     LockStore.setBool(ctx, "g_fps", fpsOn)
                     MonitorService.instance?.wakeSpeed()
                 }
-                MiniTool(Icons.Outlined.CleaningServices, "Clear RAM", false, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.CleaningServices, null, "Clear RAM", false, Modifier.weight(1f)) {
                     io.launch { say(if (Root.ok("am kill-all") && Sys.dropCaches()) "RAM cleared" else "Not available") }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MiniTool(Icons.Outlined.PhotoCamera, "Shot", false, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.PhotoCamera, null, "Shot", false, Modifier.weight(1f)) {
                     closePanel()
                     io.launch {
                         delay(700)
@@ -735,50 +752,53 @@ class GameSidebar(private val ctx: Context) {
                         say(if (Root.ok("mkdir -p /sdcard/Pictures/Ashutool", "screencap -p $f")) "Screenshot saved" else "Could not save")
                     }
                 }
-                MiniTool(Icons.Outlined.Videocam, if (Recorder.running) "Stop" else "Record", Recorder.running, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.Videocam, null, if (Recorder.running) "Stop" else "Record", Recorder.running, Modifier.weight(1f)) {
                     if (Recorder.running) io.launch { Recorder.stop(); say("Recording saved") }
                     else {
                         closePanel()
                         io.launch { delay(700); if (!Recorder.start()) say("Could not start recording") }
                     }
                 }
-                MiniTool(Icons.Outlined.TouchApp, "Touches", touches, Modifier.weight(1f)) {
+                MiniTool(Icons.Outlined.TouchApp, null, "Touches", touches, Modifier.weight(1f)) {
                     touches = !touches
                     io.launch { Root.ok("settings put system show_touches ${if (touches) 1 else 0}") }
                 }
-                Spacer(Modifier.weight(1f))
-            }
-            if (shelf.isNotEmpty()) {
-                Text("Open in window", color = SbLow, fontSize = 10.sp)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(shelf, key = { it }) { p ->
-                        Column(
-                            Modifier.clickable {
-                                closePanel()
-                                io.launch {
-                                    val ok = if (LockStore.bool(ctx, "g_float", true)) FloatWindows.open(ctx, p) else Windows.open(ctx, p, false)
-                                    say(if (!ok) "Could not open" else FloatWindows.note.ifEmpty { "Opening" })
-                                }
-                            },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            AppIcon(p, 38.dp)
-                            Text(appLabel(p), color = SbLow, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(48.dp))
-                        }
+                // 5G / 4G right here: the picture shows which one you are on
+                MiniTool(null, if (net == false) "4G" else "5G", "5G / 4G", net == true, Modifier.weight(1f)) {
+                    val want = net != true
+                    net = want
+                    IslandHub.flashNet(ctx, want)
+                    NetMode.apply(ctx, want) { err ->
+                        handler.post { if (err.isNotEmpty()) { net = !want; toast(ctx, "5G / 4G did not change") } }
                     }
                 }
             }
-            SliderRow(Icons.Outlined.LightMode, "Brightness", bright, 5f, 255f) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniTool(Ringer.icon(ringer), null, Ringer.label(ringer), ringer != Ringer.SILENT, Modifier.weight(1f)) {
+                    ringer = Ringer.cycle(ctx) { ringer = it }
+                }
+                MiniTool(Icons.Outlined.MusicNote, null, "Volume", false, Modifier.weight(1f)) {
+                    closePanel()
+                    handler.postDelayed({ VolumePanel.show(ctx) }, 360)
+                }
+                MiniTool(Icons.Outlined.BlurOn, null, "Island", island, Modifier.weight(1f)) {
+                    island = !island
+                    IslandCfg.putBool(ctx, "isl_on", island)
+                    MonitorService.instance?.islandChanged()
+                }
+                Spacer(Modifier.weight(1f))
+            }
+            SliderRow(Icons.Outlined.LightMode, "Brightness", bright, 5f, 255f, accent) {
                 bright = it
                 io.launch { Root.ok("settings put system screen_brightness_mode 0", "settings put system screen_brightness ${it.toInt()}") }
             }
-            SliderRow(Icons.Outlined.MusicNote, "Volume", vol, 0f, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()) {
+            SliderRow(Icons.Outlined.MusicNote, "Volume", vol, 0f, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat(), accent) {
                 vol = it
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
             }
             Text(
                 "${Credits.APP}  \u00B7  ${Credits.AUTHOR}  \u00B7  ${Credits.TELEGRAM}",
-                color = SbLow, fontSize = 9.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = TextLo, fontSize = 9.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -786,33 +806,39 @@ class GameSidebar(private val ctx: Context) {
 
     @Composable
     private fun Seg(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-        val shape = RoundedCornerShape(11.dp)
+        val shape = RoundedCornerShape(13.dp)
         Box(
             modifier.bounceClick(onClick = onClick).clip(shape)
-                .background(if (selected) Brush.linearGradient(listOf(Color.White, Color(0xFFCFE3FF))) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                .padding(vertical = 7.dp),
+                .then(if (selected) Modifier.background(Palette.cur.primary.h()) else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            Text(label, color = if (selected) Ink else SbText, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(
+                label, color = if (selected) Ink else TextHi, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
         }
     }
 
-    /** Small square button: an icon with a short name under it. */
+    /** Square button: an icon (or a short text like 5G) with a name under it. Lit when it is on. */
     @Composable
-    private fun MiniTool(icon: ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
-        val shape = RoundedCornerShape(14.dp)
+    private fun MiniTool(icon: ImageVector?, glyph: String?, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+        val shape = RoundedCornerShape(16.dp)
+        val ink = if (on) Ink else TextHi
         Column(
             modifier.bounceClick(onClick = onClick).clip(shape)
-                .background(
-                    if (on) Brush.linearGradient(listOf(Color.White, Color(0xFFCFE3FF)))
-                    else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.10f)))
+                .then(
+                    if (on) Modifier.background(Palette.cur.primary.d())
+                    else Modifier.background(TextHi.copy(alpha = 0.09f)).border(1.dp, TextHi.copy(alpha = 0.08f), shape)
                 )
-                .padding(vertical = 8.dp),
+                .padding(vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, label, tint = if (on) Ink else SbText, modifier = Modifier.size(19.dp))
+            Box(Modifier.height(22.dp), contentAlignment = Alignment.Center) {
+                if (glyph != null) Text(glyph, color = ink, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                else if (icon != null) Icon(icon, label, tint = ink, modifier = Modifier.size(20.dp))
+            }
             Spacer(Modifier.height(3.dp))
-            Text(label, color = if (on) Ink else SbText, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(label, color = ink, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 
@@ -820,39 +846,24 @@ class GameSidebar(private val ctx: Context) {
         try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(p, 0)).toString() } catch (e: Exception) { p }
 
     @Composable
-    private fun Stat(label: String, value: String) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(56.dp)) {
-            Text(value, color = SbText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(label, color = SbLow, fontSize = 9.sp)
-        }
-    }
-
-    @Composable
-    private fun Tool(icon: ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
-        val shape = RoundedCornerShape(16.dp)
+    private fun Stat(label: String, value: String, modifier: Modifier) {
         Column(
-            modifier.bounceClick(onClick = onClick).clip(shape)
-                .background(
-                    if (on) Brush.linearGradient(listOf(Color.White, Color(0xFFCFE3FF)))
-                    else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.10f)))
-                )
-                .padding(vertical = 12.dp),
+            modifier.clip(RoundedCornerShape(12.dp)).background(TextHi.copy(alpha = 0.08f)).padding(vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, label, tint = if (on) Ink else SbText, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(label, color = if (on) Ink else SbText, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text(value, color = TextHi, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(label, color = TextLo, fontSize = 9.sp)
         }
     }
 
     @Composable
-    private fun SliderRow(icon: ImageVector, label: String, value: Float, lo: Float, hi: Float, onChange: (Float) -> Unit) {
+    private fun SliderRow(icon: ImageVector, label: String, value: Float, lo: Float, hi: Float, accent: Color, onChange: (Float) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, label, tint = SbLow, modifier = Modifier.size(20.dp))
+            Icon(icon, label, tint = TextLo, modifier = Modifier.size(20.dp))
             Slider(
                 value = value.coerceIn(lo, hi), onValueChange = onChange, valueRange = lo..hi,
                 modifier = Modifier.weight(1f).padding(start = 8.dp),
-                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.22f))
+                colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent, inactiveTrackColor = TextHi.copy(alpha = 0.18f))
             )
         }
     }

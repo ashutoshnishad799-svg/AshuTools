@@ -44,8 +44,8 @@ class MonitorService : Service() {
     private var callPill: CallPill? = null
     private var banner: IncomingBanner? = null
     private var hud: GameHud? = null
-    private var picker: FloatPicker? = null
     private var statusSpeed: StatusSpeed? = null
+    private var island: IslandHost? = null
     private var watcher: CallWatcher? = null
     private var screenRx: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -60,12 +60,12 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /** Opens the panel of floating apps. Used by the quick settings tile and the Home page. */
-    fun showPicker() { handler.post { picker?.show() } }
-
     /** For the Games page: is the bar window on screen right now, and if not, why. */
     fun barShown(): Boolean = sidebar?.isShown == true
     fun barError(): String = sidebar?.error ?: ""
+
+    /** The Dynamic Island was switched on or off, or one of its sources changed. Applies it at once. */
+    fun islandChanged() { handler.post { island?.relayout(); syncListener() } }
 
     /** Checks again right now, for example after a game was added by hand. */
     fun recheck() { handler.post { reeval() } }
@@ -100,13 +100,17 @@ class MonitorService : Service() {
             callPill = CallPill(this)
             banner = IncomingBanner(this)
             hud = GameHud(this)
-            picker = FloatPicker(this)
             statusSpeed = StatusSpeed(this)
+            island = IslandHost(this)
             // The notification listener only runs while a game needs it. Until then it stays switched off.
             CallNames.set(this, false)
             registerScreen()
             Fg.listener = { onFg(it) }
             tryWatch()
+            // The Dynamic Island, and the notification listener it reads music and notifications through
+            island?.start()
+            handler.post { syncListener() }
+            NetMode.warm(this)
             s.launch(Dispatchers.IO) {
                 Sys.saveOriginal(this@MonitorService, Sys.policies())
                 Charge.recover(this@MonitorService)
@@ -114,9 +118,6 @@ class MonitorService : Service() {
                 Recorder.sync()
                 GameMode.games(this@MonitorService)
                 RotationGuard.recover(this@MonitorService)
-                // Floating windows need three system switches. They are set here, outside any game, so the first window
-                // never changes them in the middle of a game, which would make the game rebuild its screen.
-                if (LockStore.bool(this@MonitorService, "g_float", true)) Windows.ensureFreeform()
                 if (!Guard.safe) { GameMode.recover(this@MonitorService); Firewall.applyAll(this@MonitorService) }
                 handler.post { seedForeground(); reeval() }
             }
@@ -133,7 +134,7 @@ class MonitorService : Service() {
     /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
+        val fix = Runnable { sidebar?.relayout(); island?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
         handler.postDelayed(fix, 150)
         handler.postDelayed(fix, 700)
     }
@@ -143,7 +144,9 @@ class MonitorService : Service() {
         Fg.listener = null
         Fg.game = null
         scope?.cancel()
-        sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide(); hud?.hide(); statusSpeed?.hide(); picker?.hide()
+        sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide(); hud?.hide(); statusSpeed?.hide()
+        island?.stop()
+        NetMode.shutdown()
         try { screenRx?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         CallNames.set(this, false)
         watcher?.stop()
@@ -185,6 +188,7 @@ class MonitorService : Service() {
         if (now - lastNotify < (if (!Monitor.screenOn) 110_000 else if (Monitor.uiVisible || Monitor.boost) 5000 else 20_000)) return
         lastNotify = now
         nm.notify(ID, build(s))
+        IslandHub.onBattery(this, s.batt.level, s.batt.charging)
         if (!Guard.safe) scope?.launch(Dispatchers.IO) { Saver.auto(this@MonitorService, s) }
     }
 
@@ -212,10 +216,10 @@ class MonitorService : Service() {
     private fun screenOff() {
         Monitor.screenOn = false
         Session.screen(this, false)
+        island?.sleep()
         sidebar?.hide()
         hud?.hide()
         statusSpeed?.hide()
-        picker?.hide()
         limitJob?.cancel()
         scope?.launch(Dispatchers.IO) { BgControl.screenOff(this@MonitorService); Saver.screenOff(this@MonitorService) }
         if (LockStore.bool(this, "bs_doze", false) && !Guard.safe) {
@@ -230,6 +234,7 @@ class MonitorService : Service() {
     private fun screenOn() {
         Monitor.screenOn = true
         Session.screen(this, true)
+        island?.wake()
         dozeJob?.cancel()
         Monitor.kick(this)
         scope?.launch(Dispatchers.IO) { Saver.screenOn(this@MonitorService) }
@@ -279,7 +284,7 @@ class MonitorService : Service() {
                     if (!Guard.safe) enterGame(pkg)
                 }
                 pkg == packageName -> {}
-                cur != null && (isTransient(pkg) || FloatWindows.hasWindow(pkg)) -> {}
+                cur != null && isTransient(pkg) -> {}
                 cur != null -> verifyLeave(cur, pkg)
                 else -> if (!Guard.safe) leaveGame()
             }
@@ -308,7 +313,7 @@ class MonitorService : Service() {
         // With usage access, no recent change means nothing replaced the game. Without it, trust the window event.
         // A launcher in front is never a pop-up over the game. It is the end of game space.
         val home = pkg in Safety.homePkgs(this)
-        val stay = !home && if (usage) (top == null || top == game || skipFg(top) || isTransient(top) || FloatWindows.hasWindow(top)) else (top == game)
+        val stay = !home && if (usage) (top == null || top == game || skipFg(top) || isTransient(top)) else (top == game)
         if (stay) return
         Fg.game = null
         if (!Guard.safe) leaveGame()
@@ -372,7 +377,7 @@ class MonitorService : Service() {
             val spdOn = LockStore.bool(this, "g_hud_speed", true)
             // The readout is only for a game you can see. A launcher or any other app in front means it is not.
             val front = Fg.pkg
-            val gameVisible = game != null && (front == null || front == game || front in games || isTransient(front) || FloatWindows.hasWindow(front))
+            val gameVisible = game != null && (front == null || front == game || front in games || isTransient(front))
             val hudOn = gameVisible && !Guard.safe && (fpsOn || spdOn)
             if (!Monitor.screenOn || (!barOn && !hudOn)) {
                 statusSpeed?.hide()
@@ -428,6 +433,7 @@ class MonitorService : Service() {
         if (ringing && allowed && LockStore.bool(this, "calls_banner", true)) banner?.show() else banner?.hide()
         if (talking && allowed && LockStore.bool(this, "calls_mini", true)) callPill?.show() else callPill?.hide()
         syncListener()
+        island?.refresh()
     }
 
     /**
@@ -551,6 +557,7 @@ class MonitorService : Service() {
             }
         }
         syncCallUi()
+        IslandHub.onCall(this)
     }
 
     companion object {

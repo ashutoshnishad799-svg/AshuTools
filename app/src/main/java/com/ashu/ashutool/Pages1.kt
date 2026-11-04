@@ -79,8 +79,10 @@ fun HomePage(root: Boolean?) {
                 }
             }
         }
+        item { Box(Modifier.enter(1)) { QuickTogglesCard() } }
+        item { IslandHomeCard() }
         item {
-            Glass(Modifier.enter(1)) {
+            Glass(Modifier.enter(2)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     Gauge(s.cpu / 100f, "${s.cpu.toInt()}%", "CPU", Icons.Outlined.Memory, GTeal)
                     Gauge(s.ramPct / 100f, "${s.ramPct.toInt()}%", "RAM", Icons.Outlined.DeveloperBoard, GViolet)
@@ -123,8 +125,6 @@ fun HomePage(root: Boolean?) {
                 color = TextLo, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
             )
         }
-        item { FloatAppsCard() }
-        item { QuickTogglesCard() }
         item { CreditFooter() }
     }
 }

@@ -89,7 +89,9 @@ object Root {
             "pm grant $pkg android.permission.ANSWER_PHONE_CALLS",
             "dumpsys deviceidle whitelist +$pkg",
             // lets the call banner read the caller's name from the dialer's notification
-            "cmd notification allow_listener $pkg/$pkg.CallNameService"
+            "cmd notification allow_listener $pkg/$pkg.CallNameService",
+            // lets the Sound tile switch to silent without asking
+            "cmd notification allow_dnd $pkg"
         )
         if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)
     }
