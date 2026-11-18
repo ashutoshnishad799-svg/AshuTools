@@ -31,9 +31,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -60,7 +63,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -91,6 +96,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,7 +128,7 @@ val ISkins: List<ISkin> = listOf(
 val ISkinNames: List<String> get() = ISkins.map { it.name }
 val IFxNames = listOf("None", "Glow", "Pulse", "Sweep", "Rainbow")
 val IShapeNames = listOf("Pill", "Notch", "Squircle", "Tab")
-val IAnimNames = listOf("Bouncy", "Smooth", "Snappy", "Elastic")
+val IAnimNames = listOf("Bouncy", "Smooth", "Snappy", "Elastic", "Fluid")
 
 private class IStyle(val d: Float, val skin: ISkin, val accent: Color)
 
@@ -129,6 +136,8 @@ private fun <T> springFor(i: Int): SpringSpec<T> = when (i) {
     1 -> spring(dampingRatio = 0.92f, stiffness = 260f)
     2 -> spring(dampingRatio = 0.80f, stiffness = 760f)
     3 -> spring(dampingRatio = 0.34f, stiffness = 300f)
+    // Fluid: a hint of overshoot and no wobble, the feel of the iPhone island
+    4 -> spring(dampingRatio = 0.82f, stiffness = 360f)
     else -> spring(dampingRatio = 0.55f, stiffness = 380f)
 }
 
@@ -151,6 +160,7 @@ private fun clock(sec: Long): String {
 fun IslandRoot() {
     val ctx = LocalContext.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
     val d = IslandCfg.scale / 100f
     val skin = ISkins[IslandCfg.skin.coerceIn(0, ISkins.size - 1)]
     val m = IslandHub.mainAct()
@@ -185,7 +195,20 @@ fun IslandRoot() {
         }
     }
 
+    // Which way the last swipe went. It is cleared a moment later, so a new call or message still fades in as usual.
+    val slide = IslandHub.slide
+    LaunchedEffect(slide) {
+        if (slide != 0) {
+            delay(450L)
+            IslandHub.slide = 0
+        }
+    }
+
     val mNow by rememberUpdatedState(m)
+    // How far the finger has pulled the island sideways, in px. It springs back to 0 when you let go.
+    val dragX = remember { Animatable(0f) }
+    val pressed = remember { mutableStateOf(false) }
+    val press by animateFloatAsState(if (pressed.value) 0.96f else 1f, spring(dampingRatio = 0.6f, stiffness = 520f), label = "isl-press")
     fun tick() { if (IslandCfg.hapt) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
 
     Box(Modifier.fillMaxSize().padding(top = IslandLayout.PAD.dp), contentAlignment = Alignment.TopCenter) {
@@ -195,6 +218,8 @@ fun IslandRoot() {
                 alpha = (a * IslandCfg.alpha / 100f).coerceIn(0f, 1f)
                 val sc = 0.55f + 0.45f * a
                 scaleX = sc; scaleY = sc
+                // The whole island leans a little with the finger. The window has room for this on both sides.
+                translationX = dragX.value * 0.10f
                 transformOrigin = TransformOrigin(0.5f, 0f)
             },
             horizontalArrangement = Arrangement.spacedBy(IslandLayout.GAP.dp),
@@ -202,10 +227,47 @@ fun IslandRoot() {
         ) {
             IslandSurface(
                 Modifier
+                    // Pressing makes it shrink a little under the finger, letting go makes it spring back
+                    .graphicsLayer { scaleX = press; scaleY = press }
                     .pointerInput(Unit) {
                         detectTapGestures(
+                            onPress = { pressed.value = true; tryAwaitRelease(); pressed.value = false },
                             onTap = { if (mNow != null) { tick(); IslandHub.toggleExpanded() } },
                             onLongPress = { mNow?.let { tick(); openOwner(ctx, it) } }
+                        )
+                    }
+                    // Swipe left or right: the next or the previous thing slides in
+                    .pointerInput(Unit) {
+                        val limit = 96.dp.toPx()
+                        val commit = 52.dp.toPx()
+                        val flick = 18.dp.toPx()
+                        var acc = 0f
+                        var vel = 0f
+                        var lastT = 0L
+                        // The island follows the finger and gets heavier the further it goes. With nothing else to show it resists more.
+                        fun rubber(x: Float): Float {
+                            val e = if (IslandHub.acts.size > 1) x else x * 0.35f
+                            val sg = if (e < 0f) -1f else 1f
+                            return sg * limit * (1f - exp(-abs(e) / limit))
+                        }
+                        fun home() { scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.72f, stiffness = 380f)) } }
+                        detectHorizontalDragGestures(
+                            onDragStart = { acc = 0f; vel = 0f; lastT = 0L },
+                            onDragEnd = {
+                                val far = abs(acc) > commit || (abs(vel) > 0.8f && abs(acc) > flick)
+                                if (far && IslandHub.cycle(if (acc < 0f) 1 else -1)) tick()
+                                home()
+                            },
+                            onDragCancel = { home() },
+                            onHorizontalDrag = { ch, amount ->
+                                ch.consume()
+                                acc += amount
+                                val t = ch.uptimeMillis
+                                if (lastT != 0L && t > lastT) vel = 0.6f * vel + 0.4f * (amount / (t - lastT).toFloat())
+                                lastT = t
+                                val x = rubber(acc)
+                                scope.launch { dragX.snapTo(x) }
+                            }
                         )
                     }
                     .pointerInput(Unit) {
@@ -228,7 +290,26 @@ fun IslandRoot() {
                 AnimatedContent(
                     targetState = m,
                     contentKey = { it?.id },
-                    transitionSpec = { ContentTransform(fadeIn(tween(240, delayMillis = 60)) + scaleIn(tween(240), 0.92f), fadeOut(tween(140)) + scaleOut(tween(140), 0.96f), 0f, null) },
+                    // The content moves with the finger and fades a little. The shape itself stays.
+                    modifier = Modifier.graphicsLayer {
+                        translationX = dragX.value * 0.65f
+                        alpha = 1f - 0.45f * (abs(dragX.value) / 96.dp.toPx()).coerceIn(0f, 1f)
+                    },
+                    transitionSpec = {
+                        val sw = IslandHub.slide
+                        if (sw != 0) {
+                            // A swipe: the old content leaves on the side you swiped to, the new one comes in from the other side
+                            ContentTransform(
+                                slideInHorizontally(tween(360, easing = FastOutSlowInEasing)) { full -> (full * 0.6f * sw).toInt() } +
+                                    fadeIn(tween(240, delayMillis = 50)),
+                                slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { full -> (-full * 0.6f * sw).toInt() } +
+                                    fadeOut(tween(150)),
+                                0f, null
+                            )
+                        } else {
+                            ContentTransform(fadeIn(tween(240, delayMillis = 60)) + scaleIn(tween(240), 0.92f), fadeOut(tween(140)) + scaleOut(tween(140), 0.96f), 0f, null)
+                        }
+                    },
                     label = "isl-main"
                 ) { act ->
                     if (act != null) {
@@ -252,7 +333,15 @@ fun IslandRoot() {
                     },
                     bw, bw, CircleShape, bw / 2, skin, if (IslandCfg.fx >= 3) 1 else IslandCfg.fx, side.accent
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Lead(side, bw * 0.66f, st) }
+                    // When swiping changes the bubble, the old picture fades out and the new one grows in
+                    AnimatedContent(
+                        targetState = side,
+                        contentKey = { it.id },
+                        transitionSpec = { ContentTransform(fadeIn(tween(220, delayMillis = 40)) + scaleIn(tween(220), 0.6f), fadeOut(tween(140)) + scaleOut(tween(140), 0.6f), 0f, null) },
+                        label = "isl-bub"
+                    ) { sd ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Lead(sd, bw * 0.66f, st) }
+                    }
                 }
             }
         }
@@ -462,7 +551,8 @@ private fun CallExpanded(a: IAct, st: IStyle) {
     val d = st.d
     val ringing = Calls.state == TelephonyManager.CALL_STATE_RINGING
     val name = Calls.caller.ifEmpty { if (ringing) "Incoming call" else "On call" }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // Tap the name to open the phone app
+    Row(Modifier.bounceClick { Safety.dialerPkgs(ctx).firstOrNull()?.let { openApp(ctx, it) }; IslandHub.collapse() }, verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size((46f * d).dp).clip(CircleShape).background(a.accent.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
             val ch = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString()
             if (ch != null && Calls.caller.isNotEmpty()) Text(ch, color = a.accent, fontSize = (20f * d).sp, fontWeight = FontWeight.Bold)
@@ -501,9 +591,12 @@ private fun CallExpanded(a: IAct, st: IStyle) {
 
 @Composable
 private fun MediaExpanded(a: IAct, st: IStyle) {
+    val ctx = LocalContext.current
     val d = st.d
     val sub = st.skin.sub
     var pos by remember { mutableLongStateOf(0L) }
+    // While a finger drags the bar this is the place it points to (0 to 1), otherwise -1
+    var scrub by remember { mutableFloatStateOf(-1f) }
     LaunchedEffect(IslandMedia.playing, IslandMedia.title) {
         while (true) {
             pos = IslandMedia.positionMs()
@@ -511,8 +604,9 @@ private fun MediaExpanded(a: IAct, st: IStyle) {
         }
     }
     val dur = IslandMedia.durationMs
-    val frac = if (dur > 0L) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    val frac = if (scrub >= 0f) scrub else if (dur > 0L) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
+    // Tap the cover or the title to open the player
+    Row(Modifier.bounceClick { IslandMedia.open(ctx); IslandHub.collapse() }, verticalAlignment = Alignment.CenterVertically) {
         val art = IslandMedia.art
         Box(Modifier.size((56f * d).dp).clip(RoundedCornerShape(14.dp)).background(a.accent.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
             if (art != null) Image(art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -527,14 +621,23 @@ private fun MediaExpanded(a: IAct, st: IStyle) {
     }
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(clock(pos / 1000L), color = sub, fontSize = (10f * d).sp, modifier = Modifier.width(38.dp))
+        Text(clock((if (scrub >= 0f) (scrub * dur).toLong() else pos) / 1000L), color = sub, fontSize = (10f * d).sp, modifier = Modifier.width(38.dp))
         Box(
-            Modifier.weight(1f).height(14.dp)
-                .pointerInput(dur) { detectTapGestures { o -> if (dur > 0L) IslandMedia.seekTo((o.x / size.width * dur).toLong()) } },
+            Modifier.weight(1f).height(20.dp)
+                .pointerInput(dur) { detectTapGestures { o -> if (dur > 0L) IslandMedia.seekTo((o.x / size.width * dur).toLong()) } }
+                // Drag along the bar to scrub. This also keeps a swipe that starts on the bar from changing the island.
+                .pointerInput(dur) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { o -> if (dur > 0L) scrub = (o.x / size.width).coerceIn(0f, 1f) },
+                        onDragEnd = { if (dur > 0L && scrub >= 0f) IslandMedia.seekTo((scrub * dur).toLong()); scrub = -1f },
+                        onDragCancel = { scrub = -1f },
+                        onHorizontalDrag = { ch, _ -> ch.consume(); if (dur > 0L) scrub = (ch.position.x / size.width).coerceIn(0f, 1f) }
+                    )
+                },
             contentAlignment = Alignment.CenterStart
         ) {
             Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
-            Box(Modifier.fillMaxWidth(frac).height(4.dp).clip(CircleShape).background(a.accent))
+            Box(Modifier.fillMaxWidth(frac).height(if (scrub >= 0f) 6.dp else 4.dp).clip(CircleShape).background(a.accent))
         }
         Text(if (dur > 0L) clock(dur / 1000L) else "--:--", color = sub, fontSize = (10f * d).sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
     }
@@ -595,7 +698,8 @@ private fun RecordExpanded(a: IAct, st: IStyle) {
 private fun NoteExpanded(a: IAct, st: IStyle) {
     val ctx = LocalContext.current
     val d = st.d
-    Row(verticalAlignment = Alignment.Top) {
+    // Tap the message to open the app
+    Row(Modifier.bounceClick { openApp(ctx, a.pkg); IslandHub.remove(a.id) }, verticalAlignment = Alignment.Top) {
         Lead(a, (40f * d).dp, st)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

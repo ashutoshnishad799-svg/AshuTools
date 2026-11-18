@@ -109,9 +109,10 @@ private fun demo(ctx: android.content.Context, which: Int) {
         1 -> IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 7000L))
         2 -> IslandHub.flashNet(ctx, true)
         else -> {
-            // Two at once: tap the small bubble and the two change places
-            IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 12000L))
-            IslandHub.upsert(IAct("demo_note", IKind.NOTE, 55, "Ashutool", "Tap the small bubble to open it", null, "", ctx.packageName, Color(0xFF60A5FA), now + 12000L))
+            // Three at once: swipe the island left or right, or tap the small bubble, and they change places
+            IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 15000L))
+            IslandHub.upsert(IAct("demo_note", IKind.NOTE, 55, "Ashutool", "Swipe the island left or right, or tap the small bubble", null, "", ctx.packageName, Color(0xFF60A5FA), now + 15000L))
+            IslandHub.upsert(IAct("demo_flash", IKind.FLASH, 60, "5G on", "Swipe to see the next one", null, "5G", "", Color(0xFF38BDF8), now + 15000L))
         }
     }
 }
@@ -144,7 +145,7 @@ private fun IslandStatusCard() {
             GlassButton(Icons.Outlined.Notifications, "Message") { demo(ctx, 0) }
             GlassButton(Icons.Outlined.BatteryChargingFull, "Charging") { demo(ctx, 1) }
             GlassButton(Icons.Outlined.SignalCellularAlt, "5G") { demo(ctx, 2) }
-            GlassButton(Icons.Outlined.BlurOn, "Two at once") { demo(ctx, 3) }
+            GlassButton(Icons.Outlined.BlurOn, "Swipe demo") { demo(ctx, 3) }
         }
     }
 }
@@ -182,7 +183,7 @@ private fun IslandMain(open: (String) -> Unit) {
         item { NavRow(Icons.Outlined.Widgets, GTeal, "What it shows", "Calls, music, charging, recording, notifications") { open("sources") } }
         item {
             Glass {
-                Hint("With two things at once, for example a call and music, the more important one is the big shape and the other is a small bubble beside it. Tap the bubble and it opens while the other becomes the bubble. Tap the big shape to open it, swipe it up to close. Press and hold to open the app.")
+                Hint("With two or more things at once, for example a call, music and a message, one is the big shape and the next is a small bubble beside it. Swipe the big shape left or right to bring the next or the previous one, or tap the bubble. Tap the big shape to open it and tap its picture or title to open the app. Swipe it up to close. Press and hold to open the app straight away.")
             }
         }
         item { CreditFooter() }
@@ -196,7 +197,7 @@ private fun IslandLookSub(back: () -> Unit) {
         item { IChoice("Edge effect", IFxNames, "isl_fx", 1, GViolet) }
         item { IChoice("Shape", IShapeNames, "isl_shape", 0, GBlue) }
         item { ISlide("Roundness", "isl_round", 100, 0, 100, "%") }
-        item { IChoice("Animation", IAnimNames, "isl_anim", 0, GTeal) }
+        item { IChoice("Animation", IAnimNames, "isl_anim", 4, GTeal) }
         item { ISwitch("isl_tint", true, Icons.Outlined.AutoAwesome, GViolet, "Colour from what is playing", "The glow takes the colour of the cover or the app") }
         item { ISwitch("isl_hapt", true, Icons.Outlined.TouchApp, GTeal, "Tick on touch", "A small vibration when you tap the island") }
         item { ISwitch("isl_idle", false, Icons.Outlined.PhoneAndroid, GBlue, "Always show the shape", "Keep a small empty island on screen when nothing is going on") }
@@ -215,6 +216,7 @@ private fun IslandSizeSub(back: () -> Unit) {
         item { ISlide("Stays open for", "isl_hold", 7, 0, 30, " s") }
         item { Glass { Hint("Stays open for 0 means it only closes when you swipe it up or tap it.") } }
         item { ISlide("Short messages stay for", "isl_flash", 3, 1, 10, " s") }
+        item { ISwitch("isl_hide_speed", true, Icons.Outlined.NetworkCheck, GCyan, "Make room in the status bar", "The network speed fades out while the island is on screen and comes back after it leaves") }
         item { ISwitch("isl_games", true, Icons.Outlined.SportsEsports, GTeal, "Show in games", "Keep the island on screen while you play") }
         item { ISwitch("isl_land", true, Icons.Outlined.ScreenLockPortrait, GBlue, "Show when the screen is sideways", "Turn off to hide it in landscape") }
     }

@@ -13,6 +13,9 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.WindowManager
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Shadow
@@ -191,7 +195,11 @@ class GameHud(private val ctx: Context) {
     }
 }
 
-/** Network speed in the status bar. A thin see-through window over the bar, never takes touches. */
+/**
+ * Network speed in the status bar. A thin see-through window over the bar, never takes touches.
+ * While the Dynamic Island is on screen the speed fades out so the two never crowd each other, and it fades back in
+ * a moment after the island has gone. The switch is in Island, Size and place.
+ */
 class StatusSpeed(private val ctx: Context) {
     private val overlay = Overlay(ctx)
 
@@ -224,7 +232,21 @@ class StatusSpeed(private val ctx: Context) {
     @Composable
     private fun Readout() {
         val t = SpeedState.text
-        Box(Modifier.fillMaxHeight().padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+        val hide = IslandCfg.hideSpeed && IslandHub.onScreen
+        // Out quickly, back slowly and only after the island has finished leaving
+        val fade by animateFloatAsState(
+            if (hide) 0f else 1f,
+            tween(if (hide) 170 else 260, delayMillis = if (hide) 0 else 320, easing = FastOutSlowInEasing),
+            label = "sp-fade"
+        )
+        Box(
+            Modifier.fillMaxHeight().padding(horizontal = 4.dp).graphicsLayer {
+                alpha = fade
+                val k = 0.92f + 0.08f * fade
+                scaleX = k; scaleY = k
+            },
+            contentAlignment = Alignment.Center
+        ) {
             Text(t, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, style = HudShadow, maxLines = 1)
         }
     }

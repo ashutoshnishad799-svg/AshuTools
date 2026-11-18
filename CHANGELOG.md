@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased - island swipe, smoother motion, room in the status bar
+
+### Dynamic Island
+- Swipe the island left or right to bring the next or the previous thing to the front (call, music, charging,
+  message and so on, round and round). The island follows your finger, gets heavier the further you pull, and a quick
+  flick is enough. The old content slides out on the side you swiped to and the new one slides in from the other side.
+  With only one thing to show the island pulls a little and springs back.
+- The small bubble is now always the thing that comes next when you swipe left, and its picture changes with a fade.
+- Pressing the island makes it shrink a little under the finger and spring back.
+- Clickable cards: tap the name of a call, the cover or title of the music, or the message text to open that app.
+  The music bar can now be dragged to scrub, and its touch area is taller.
+- New animation feel, Fluid (a hint of overshoot, no wobble). It is the default for new installs.
+- New switch in Island, Size and place: Make room in the status bar. While the island is on screen the network speed
+  in the status bar fades out, and it fades back in a moment after the island has gone. On by default.
+- The Try it button Two at once is now Swipe demo and shows three things.
+
 ## 3.0.0 - redesign, Dynamic Island, sound controls
 Made by Ashutosh Nishad, Telegram @ashutosh_07x
 

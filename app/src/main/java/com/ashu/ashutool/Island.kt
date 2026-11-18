@@ -63,6 +63,8 @@ import kotlinx.coroutines.launch
 //
 // With two things going on at once (say a call and music) the island shows the more important one as the main
 // shape and the other as a small bubble beside it. Tap the bubble and the two change places, with an animation.
+// Swipe the main shape left or right to bring the next or the previous thing to the front. While the island is on
+// screen the network speed in the status bar fades out, see StatusSpeed in Hud.kt.
 // =====================================================================================================================
 
 enum class IKind { CALL, MEDIA, CHARGE, RECORD, FLASH, NOTE }
@@ -114,6 +116,8 @@ object IslandCfg {
     var notifText by mutableStateOf(true)
     var games by mutableStateOf(true)
     var landscape by mutableStateOf(true)
+    /** Fade the network speed out of the status bar while the island is on screen. */
+    var hideSpeed by mutableStateOf(true)
 
     fun load(c: Context) {
         on = LockStore.bool(c, "isl_on", true)
@@ -128,7 +132,7 @@ object IslandCfg {
         x = LockStore.int(c, "isl_x", 0).coerceIn(-160, 160)
         scale = LockStore.int(c, "isl_scale", 100).coerceIn(70, 150)
         alpha = LockStore.int(c, "isl_alpha", 100).coerceIn(40, 100)
-        anim = LockStore.int(c, "isl_anim", 0).coerceIn(0, 3)
+        anim = LockStore.int(c, "isl_anim", 4).coerceIn(0, 4)
         hold = LockStore.int(c, "isl_hold", 7).coerceIn(0, 30)
         flashSec = LockStore.int(c, "isl_flash", 3).coerceIn(1, 10)
         hapt = LockStore.bool(c, "isl_hapt", true)
@@ -145,6 +149,7 @@ object IslandCfg {
         notifText = LockStore.bool(c, "isl_notif_text", true)
         games = LockStore.bool(c, "isl_games", true)
         landscape = LockStore.bool(c, "isl_land", true)
+        hideSpeed = LockStore.bool(c, "isl_hide_speed", true)
     }
 
     /** Saves one number setting and applies it at once. */
@@ -215,11 +220,38 @@ object IslandHub {
     var screenWdp by mutableIntStateOf(360)
     /** Counts touches, so the island stays open while you use it and the count restarts every time. */
     var touch by mutableIntStateOf(0)
+    /** Which way the last swipe went: 1 brought the next thing, -1 the one before, 0 is no swipe. The animation reads it. */
+    var slide by mutableIntStateOf(0)
 
     private fun now() = SystemClock.elapsedRealtime()
 
     fun mainAct(): IAct? = acts.firstOrNull { it.id == focusId } ?: acts.firstOrNull()
-    fun sideAct(): IAct? { val m = mainAct(); return acts.firstOrNull { it.id != m?.id } }
+    /** The small bubble: the thing that comes next when you swipe left. */
+    fun sideAct(): IAct? {
+        val m = mainAct() ?: return null
+        if (acts.size < 2) return null
+        val i = acts.indexOfFirst { it.id == m.id }
+        return acts[(i + 1) % acts.size]
+    }
+
+    /** True while the island is drawn. The status bar uses it to make room for the island. */
+    val onScreen: Boolean get() = IslandCfg.on && shown && window() != null
+
+    /**
+     * Swipe: [step] 1 brings the next thing to the front, -1 the one before it. Goes round at the ends.
+     * Returns false when there is nothing else to show.
+     */
+    fun cycle(step: Int): Boolean {
+        val list = acts
+        if (list.size < 2) return false
+        val m = mainAct() ?: return false
+        val i = list.indexOfFirst { it.id == m.id }
+        val n = ((i + step) % list.size + list.size) % list.size
+        slide = if (step > 0) 1 else -1
+        focusId = list[n].id
+        touch++
+        return true
+    }
 
     fun upsert(a: IAct) {
         main.post {

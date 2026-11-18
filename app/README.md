@@ -18,7 +18,8 @@ Bigger tabs have sub pages:
 - Island: the Dynamic Island. Look (8 themes, 5 edge effects, 4 shapes, roundness, 4 animation feels), Size and place (overall size,
   width, height, top, left and right, opacity, time open, short message time, show in games and in landscape) and What it shows
   (calls, music and video with controls, charging, recording, sound mode, notifications). Music and notifications are read through the
-  notification listener, which root allows by itself. With two things at once the second is a small bubble: tap it to swap.
+  notification listener, which root allows by itself. With two or more things at once the next one is a small bubble: tap it to swap, or swipe the island left or right to go through them.
+  Tap a call, the music cover or a message to open its app. While the island is on screen the network speed in the status bar fades out (switch in Size and place).
 - Sound: the Sound and Volume tiles, the volume panel (Small, Medium, Big, left or right, closes after 2 to 12 seconds), game panel size and optional glass blur.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   screen recording with a draggable timer pill and a notification Stop button. The panel has 5G / 4G, Sound, Volume and Island buttons.
