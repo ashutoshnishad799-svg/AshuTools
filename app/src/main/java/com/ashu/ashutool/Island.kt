@@ -23,6 +23,9 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.TrafficStats
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -49,6 +52,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 // =====================================================================================================================
@@ -65,9 +73,11 @@ import kotlinx.coroutines.launch
 // shape and the other as a small bubble beside it. Tap the bubble and the two change places, with an animation.
 // Swipe the main shape left or right to bring the next or the previous thing to the front. While the island is on
 // screen the network speed in the status bar fades out, see StatusSpeed in Hud.kt.
+// The island is a rounded rectangle, kept exactly in the middle of the screen. The small bubble sits to its right and the
+// window leaves the same room on the left, so the main shape never moves when a bubble comes or goes.
 // =====================================================================================================================
 
-enum class IKind { CALL, MEDIA, CHARGE, RECORD, FLASH, NOTE }
+enum class IKind { CALL, MEDIA, CHARGE, RECORD, FLASH, NOTE, TIMER, NET, LIVE }
 
 /** One thing the island shows. Calls, music, charging and recording read their live numbers while they are drawn. */
 class IAct(
@@ -83,7 +93,9 @@ class IAct(
     val pkg: String = "",
     val accent: Color = Color(0xFF34D399),
     /** SystemClock.elapsedRealtime() at which it goes away by itself, or 0 when it stays until it ends. */
-    val until: Long = 0L
+    val until: Long = 0L,
+    /** For a background activity: how far it is, 0 to 1, or -1 when it has no numbers. */
+    val progress: Float = -1f
 )
 
 object IslandCfg {
@@ -118,11 +130,19 @@ object IslandCfg {
     var landscape by mutableStateOf(true)
     /** Fade the network speed out of the status bar while the island is on screen. */
     var hideSpeed by mutableStateOf(true)
+    /** Downloads, navigation and other things that run in the background. */
+    var live by mutableStateOf(true)
+    /** Wi-Fi and mobile data coming and going. */
+    var conn by mutableStateOf(true)
+    /** Keeps a small island with the live speed on screen when nothing else is going on. */
+    var netSpeed by mutableStateOf(false)
+    /** The phone is in dark mode. Used by the Auto theme. */
+    var dark by mutableStateOf(true)
 
     fun load(c: Context) {
         on = LockStore.bool(c, "isl_on", true)
         idlePill = LockStore.bool(c, "isl_idle", false)
-        skin = LockStore.int(c, "isl_skin", 0).coerceIn(0, ISkins.size - 1)
+        skin = LockStore.int(c, "isl_skin", ISkins.size - 1).coerceIn(0, ISkins.size - 1)
         fx = LockStore.int(c, "isl_fx", 1).coerceIn(0, 4)
         shape = LockStore.int(c, "isl_shape", 0).coerceIn(0, 3)
         round = LockStore.int(c, "isl_round", 100).coerceIn(0, 100)
@@ -150,6 +170,10 @@ object IslandCfg {
         games = LockStore.bool(c, "isl_games", true)
         landscape = LockStore.bool(c, "isl_land", true)
         hideSpeed = LockStore.bool(c, "isl_hide_speed", true)
+        live = LockStore.bool(c, "isl_live", true)
+        conn = LockStore.bool(c, "isl_conn", true)
+        netSpeed = LockStore.bool(c, "isl_netspeed", false)
+        dark = (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
 
     /** Saves one number setting and applies it at once. */
@@ -160,7 +184,7 @@ object IslandCfg {
 
     /** True when the island needs the notification listener: for the caller name, music and notifications. */
     fun needsListener(c: Context): Boolean = LockStore.bool(c, "isl_on", true) &&
-        (LockStore.bool(c, "isl_media", true) || LockStore.bool(c, "isl_notif", true) || LockStore.bool(c, "isl_call", true))
+        (LockStore.bool(c, "isl_media", true) || LockStore.bool(c, "isl_notif", true) || LockStore.bool(c, "isl_call", true) || LockStore.bool(c, "isl_live", true))
 }
 
 /** What is playing right now. Filled by [MediaWatcher], drawn by the island. */
@@ -233,6 +257,11 @@ object IslandHub {
         val i = acts.indexOfFirst { it.id == m.id }
         return acts[(i + 1) % acts.size]
     }
+
+    fun has(id: String): Boolean = acts.any { it.id == id }
+
+    /** Opens the island by itself, for example when a timer ends. */
+    fun expandNow() { main.post { if (mainAct() != null) { expanded = true; touch++ } } }
 
     /** True while the island is drawn. The status bar uses it to make room for the island. */
     val onScreen: Boolean get() = IslandCfg.on && shown && window() != null
@@ -334,13 +363,20 @@ object IslandHub {
     }
 
     // ---- notifications
+    private fun appLabel(ctx: Context, pkg: String): String =
+        try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg }
+
     fun onNotification(ctx: Context, sbn: StatusBarNotification) {
         try {
-            if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_notif", true)) return
+            if (!LockStore.bool(ctx, "isl_on", true)) return
             val n = sbn.notification ?: return
             val pkg = sbn.packageName
             if (pkg == ctx.packageName || pkg == "android" || pkg == "com.android.systemui") return
-            if (sbn.isOngoing || (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+            // Ongoing things (downloads, navigation) become a live activity. A message about the same thing replaces it.
+            if (sbn.isOngoing) { onOngoing(ctx, sbn); return }
+            remove("l:${sbn.key}")
+            if (!LockStore.bool(ctx, "isl_notif", true)) return
+            if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
             if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_TRANSPORT ||
                 n.category == Notification.CATEGORY_PROGRESS || n.category == Notification.CATEGORY_SERVICE ||
                 n.category == Notification.CATEGORY_SYSTEM || n.category == Notification.CATEGORY_STATUS
@@ -353,7 +389,7 @@ object IslandHub {
             val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
             if (title.isEmpty() && text.isEmpty()) return
             val showText = LockStore.bool(ctx, "isl_notif_text", true)
-            val label = try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg }
+            val label = appLabel(ctx, pkg)
             upsert(
                 IAct(
                     "n:$pkg", IKind.NOTE, 55,
@@ -365,7 +401,63 @@ object IslandHub {
         } catch (_: Exception) {}
     }
 
-    /** What the island wants its window to be, in dp. Null means nothing is shown and the window can go. */
+    /** Live activities the user hid. They stay hidden until the notification itself goes away. */
+    private val liveMuted = HashSet<String>()
+
+    /** Takes a thing off the island because the user closed it. A live activity then stays away until it is over. */
+    fun dismiss(id: String) {
+        if (id.startsWith("l:")) liveMuted.add(id)
+        remove(id)
+    }
+
+    /** The last numbers drawn for each live activity, so an app that reports every few hundred ms does not make the island redraw every time. */
+    private val liveSeen = HashMap<String, Long>()
+
+    /** A download, navigation, workout or anything else that runs in the background and reports how far it is. */
+    fun onOngoing(ctx: Context, sbn: StatusBarNotification) {
+        try {
+            if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_live", true)) return
+            val n = sbn.notification ?: return
+            val pkg = sbn.packageName
+            if (pkg == ctx.packageName || pkg == "android" || pkg == "com.android.systemui") return
+            if (pkg in Safety.dialerPkgs(ctx)) return
+            if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_TRANSPORT) return
+            if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+            val ex = n.extras ?: return
+            val max = ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+            val prog = ex.getInt(Notification.EXTRA_PROGRESS, 0)
+            val indeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
+            val cat = n.category ?: ""
+            val wanted = max > 0 || indeterminate || cat == "navigation" || cat == "stopwatch" || cat == "workout"
+            if (!wanted) return
+            val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+            val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+            val id = "l:${sbn.key}"
+            if (id in liveMuted) return
+            val frac = if (max > 0 && !indeterminate) (prog.toFloat() / max).coerceIn(0f, 1f) else -1f
+            val sig = (if (frac >= 0f) (frac * 100f).toLong() else -1L) * 31L + title.hashCode() * 17L + text.hashCode()
+            if (liveSeen[id] == sig && has(id)) return
+            liveSeen[id] = sig
+            // At most three at once, so a phone full of services never fills the island
+            if (!has(id) && acts.count { it.id.startsWith("l:") } >= 3) return
+            val label = appLabel(ctx, pkg)
+            upsert(IAct(id, IKind.LIVE, 20, title.ifEmpty { label }, text, null, "", pkg, Color(0xFF38BDF8), 0L, frac))
+        } catch (_: Exception) {}
+    }
+
+    /** A notification went away. Its live activity goes with it. */
+    fun onNotificationGone(sbn: StatusBarNotification) {
+        val id = "l:${sbn.key}"
+        liveSeen.remove(id)
+        liveMuted.remove(id)
+        remove(id)
+    }
+
+    /**
+     * What the island wants its window to be, in dp. Null means nothing is shown and the window can go.
+     * The window is as wide on the left as on the right, so the main shape stays in the middle of the screen.
+     * The small bubble only shows while the island is closed, so an open island has the whole width.
+     */
     fun window(): IslandWin? {
         if (!IslandCfg.on) return null
         val m = mainAct()
@@ -375,14 +467,12 @@ object IslandHub {
         val pad = IslandLayout.PAD
         if (m == null) return IslandWin(IslandCfg.w * d + 2 * pad, h + 2 * pad)
         if (expanded) {
-            val bubble = if (sideAct() != null) h + IslandLayout.GAP else 0f
-            val w = IslandLayout.expandedW(screenWdp - bubble, d)
-            return IslandWin(w + bubble + 2 * pad, IslandLayout.expandedH(m.kind, d) + 2 * pad)
+            val w = IslandLayout.expandedW(screenWdp.toFloat(), d)
+            return IslandWin(w + 2 * pad, IslandLayout.expandedH(m.kind, d) + 2 * pad)
         }
-        val side = sideAct()
+        val slot = if (sideAct() != null) IslandLayout.GAP + h else 0f
         val mw = IslandLayout.compactW(m.kind, d)
-        val total = mw + (if (side != null) IslandLayout.GAP + h else 0f)
-        return IslandWin(total + 2 * pad, h + 2 * pad)
+        return IslandWin(mw + 2 * slot + 2 * pad, h + 2 * pad)
     }
 }
 
@@ -402,11 +492,14 @@ object IslandLayout {
             IKind.RECORD -> 56f
             IKind.NOTE -> 92f
             IKind.FLASH -> 66f
+            IKind.TIMER -> 70f
+            IKind.NET -> 86f
+            IKind.LIVE -> 92f
         }
         return base + extra * d
     }
 
-    /** [avail] is the width of the screen in dp, minus the bubble when there is one. */
+    /** [avail] is the width of the screen in dp. */
     fun expandedW(avail: Float, d: Float): Float = minOf(avail - 24f, 352f * (0.9f + 0.1f * d))
 
     fun expandedH(kind: IKind, d: Float): Float {
@@ -417,6 +510,9 @@ object IslandLayout {
             IKind.RECORD -> 116f
             IKind.NOTE -> 128f
             IKind.FLASH -> 98f
+            IKind.TIMER -> 180f
+            IKind.NET -> 152f
+            IKind.LIVE -> 132f
         }
         return h * (0.9f + 0.1f * d)
     }
@@ -535,6 +631,45 @@ class MediaWatcher(private val ctx: Context) {
 /** Charging, ringer mode and recording. Kept apart from the window so it works whether or not the island is on screen. */
 class IslandSources(private val ctx: Context) {
     private var rx: BroadcastReceiver? = null
+    private var netCb: ConnectivityManager.NetworkCallback? = null
+    private val h = Handler(Looper.getMainLooper())
+    private var lastConn = ""
+
+    /** Looks at what the phone is connected to, and shows a short message when it changed. */
+    private val checkConn = Runnable {
+        try {
+            if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_conn", true)) return@Runnable
+            IslandNet.readType(ctx)
+            val label = if (IslandNet.online) IslandNet.type else "Offline"
+            // The first answer is how things are at the start, not a change
+            if (lastConn.isEmpty()) { lastConn = label; return@Runnable }
+            if (label == lastConn) return@Runnable
+            lastConn = label
+            when {
+                !IslandNet.online -> IslandHub.flash(ctx, "conn", "No connection", "Network", Icons.Outlined.WifiOff, Color(0xFFFF6B8B), "", 3)
+                IslandNet.wifi -> IslandHub.flash(ctx, "conn", "Wi-Fi connected", "Network", Icons.Outlined.Wifi, Color(0xFF34D399), "", 3)
+                IslandNet.type == "5G" || IslandNet.type == "4G" ->
+                    IslandHub.flash(ctx, "conn", "Mobile data", IslandNet.type, null, Color(0xFF38BDF8), IslandNet.type, 3)
+                else -> IslandHub.flash(ctx, "conn", IslandNet.type, "Network", Icons.Outlined.SignalCellularAlt, Color(0xFF38BDF8), "", 3)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun startConn() {
+        if (netCb != null) return
+        try {
+            val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                // Switching from Wi-Fi to mobile data loses one network and finds another a moment later. Wait for both.
+                override fun onAvailable(network: Network) { h.removeCallbacks(checkConn); h.postDelayed(checkConn, 1000L) }
+                override fun onLost(network: Network) { h.removeCallbacks(checkConn); h.postDelayed(checkConn, 1400L) }
+            }
+            cm.registerDefaultNetworkCallback(cb)
+            netCb = cb
+            IslandNet.readType(ctx)
+            lastConn = if (IslandNet.online) IslandNet.type else "Offline"
+        } catch (_: Exception) {}
+    }
 
     fun start() {
         if (rx != null) return
@@ -565,11 +700,15 @@ class IslandSources(private val ctx: Context) {
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
         }
         try { ContextCompat.registerReceiver(ctx, r, f, ContextCompat.RECEIVER_NOT_EXPORTED); rx = r } catch (_: Exception) {}
+        startConn()
     }
 
     fun stop() {
         rx?.let { try { ctx.unregisterReceiver(it) } catch (_: Exception) {} }
         rx = null
+        h.removeCallbacksAndMessages(null)
+        netCb?.let { try { ctx.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        netCb = null
     }
 }
 
@@ -604,7 +743,48 @@ class IslandHost(private val ctx: Context) {
         updateScreen()
         s.launch { snapshotFlow { IslandHub.window() }.collect { applyWin(it) } }
         s.launch { snapshotFlow { Recorder.running }.collect { onRecording(it) } }
+        // A timer is only watched while one runs, the speed only while it is switched on
+        s.launch { snapshotFlow { IslandClock.mode == 2 && IslandClock.running }.collectLatest { on -> if (on) clockLoop() } }
+        s.launch { snapshotFlow { IslandCfg.on && IslandCfg.netSpeed }.collectLatest { on -> if (on) netLoop() else IslandHub.remove("net") } }
         startMedia()
+    }
+
+    /** Ends the countdown the moment it reaches zero. */
+    private suspend fun clockLoop() {
+        while (currentCoroutineContext().isActive) {
+            if (!hidden && Monitor.screenOn) IslandClock.poll(ctx)
+            delay(if (hidden || !Monitor.screenOn) 3000L else 250L)
+        }
+    }
+
+    /**
+     * Live network speed, shown as a small island while nothing else is going on. As soon as something else comes
+     * (a call, music, a message) the speed island steps aside, and it comes back when that is over.
+     */
+    private suspend fun netLoop() = coroutineScope {
+        launch {
+            snapshotFlow { IslandHub.acts.any { it.id != "net" } }.collect { others ->
+                if (others) IslandHub.remove("net")
+                else if (!IslandHub.has("net")) IslandHub.upsert(IAct("net", IKind.NET, 5, "Network", "", null, "", "", Color(0xFF38BDF8)))
+            }
+        }
+        var rx = 0L
+        var tx = 0L
+        var at = 0L
+        var n = 0
+        while (isActive) {
+            if (hidden || !Monitor.screenOn) { at = 0L; delay(2000L); continue }
+            val now = SystemClock.elapsedRealtime()
+            val nrx = TrafficStats.getTotalRxBytes()
+            val ntx = TrafficStats.getTotalTxBytes()
+            if (at != 0L && nrx >= 0L && ntx >= 0L) {
+                val dt = (now - at) / 1000f
+                if (dt > 0.2f) IslandNet.push(((nrx - rx) / dt).toLong(), ((ntx - tx) / dt).toLong())
+            }
+            rx = nrx; tx = ntx; at = now
+            if (n++ % 3 == 0) IslandNet.readType(ctx)
+            delay(1000L)
+        }
     }
 
     fun stop() {
@@ -649,6 +829,8 @@ class IslandHost(private val ctx: Context) {
         IslandCfg.load(ctx)
         applyWin(IslandHub.window())
         startMedia()
+        // A timer that ran out while the screen was off tells you now
+        IslandClock.poll(ctx)
     }
 
     /** Switches the media watching on or off to match the settings. Safe to call at any time. */

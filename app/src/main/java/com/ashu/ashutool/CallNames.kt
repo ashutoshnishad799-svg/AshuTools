@@ -27,12 +27,17 @@ import android.service.notification.StatusBarNotification
 class CallNameService : NotificationListenerService() {
     override fun onListenerConnected() {
         // A call that started ringing before the listener was bound is already in the shade
-        try { activeNotifications?.forEach { handle(it) } } catch (_: Exception) {}
+        // Downloads and navigation that were already running are picked up too
+        try { activeNotifications?.forEach { handle(it); if (it.isOngoing) IslandHub.onOngoing(this, it) } } catch (_: Exception) {}
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         handle(sbn)
         IslandHub.onNotification(this, sbn)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        IslandHub.onNotificationGone(sbn)
     }
 
     private fun handle(sbn: StatusBarNotification) {

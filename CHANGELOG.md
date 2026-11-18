@@ -1,6 +1,40 @@
 # Changelog
 
-## Unreleased - island swipe, smoother motion, room in the status bar
+## Unreleased - HyperOS style island, timer, network, background activities
+
+### New look
+- The island is now a rounded rectangle, not a pill. It keeps fairly square corners when closed and rounds them a little
+  more as it opens, like a card. The small bubble, the app pictures and every button inside are rounded squares too.
+  Pill is gone from the shapes, Rectangle is the first one. A soft shadow sits under the island and a faint light runs
+  along its top edge.
+- New theme Auto, the default: black in dark mode, light glass in light mode. Buttons, bars and text inside follow the
+  theme, so everything is readable on the light one too.
+- The main shape is always in the exact middle of the screen. The window is as wide on the left as on the right, so
+  the shape no longer moves when the small bubble comes or goes. The bubble only shows while the island is closed,
+  so an open island has the whole width.
+- Calls have wide Decline and Answer buttons, and Speaker, Mute and End with words. Charging has a ring that fills when
+  it opens and a bolt that breathes. A low battery shows in red.
+
+### Tap
+- One tap opens the island, the next tap closes it. A short message, a notification or the charging card also goes away
+  after it was closed this way. Swipe up closes it too. Press and hold still opens the app. The cards no longer open
+  the app on a tap, so the second tap always closes. Music has an open button, a message has Open and Dismiss.
+
+### New things on the island
+- Timer and stopwatch. Start them in Island, on the Timer and stopwatch card. On the island the time is drawn live, and
+  the open card has Reset, Pause or Start, and +1 min for the timer or Lap for the stopwatch. When the timer ends the
+  island opens by itself and the phone vibrates. A timer that ended while the screen was off tells you when it turns on.
+- Background activities: downloads, navigation and anything else that runs in the background and reports its progress
+  show up with the app picture, a title and a bar. At most three at once, Hide keeps one away until it is over.
+  Switch: What it shows, Background activities.
+- Network: a short message when Wi-Fi connects, mobile data comes (with 5G or 4G) or the connection drops. Switch:
+  Connection changes. Optional live speed island, switch Network speed on the island. It steps aside for everything
+  else. Opening it shows download, upload, the connection and a small graph.
+
+### Animation
+- The old Fluid, swipe and press animations stay. The island, the bubble and the buttons use the same springs.
+
+## Earlier in this release - island swipe, smoother motion, room in the status bar
 
 ### Dynamic Island
 - Swipe the island left or right to bring the next or the previous thing to the front (call, music, charging,

@@ -15,9 +15,9 @@ Bigger tabs have sub pages:
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
-- Island: the Dynamic Island. Look (8 themes, 5 edge effects, 4 shapes, roundness, 4 animation feels), Size and place (overall size,
+- Island: the Dynamic Island, a rounded rectangle kept exactly in the middle. Timer and stopwatch run on it. Look (8 themes and Auto for light and dark, 5 edge effects, 4 shapes, roundness, 5 animation feels), Size and place (overall size,
   width, height, top, left and right, opacity, time open, short message time, show in games and in landscape) and What it shows
-  (calls, music and video with controls, charging, recording, sound mode, notifications). Music and notifications are read through the
+  (calls, music and video with controls, charging, recording, sound mode, notifications, background activities, network). Music and notifications are read through the
   notification listener, which root allows by itself. With two or more things at once the next one is a small bubble: tap it to swap, or swipe the island left or right to go through them.
   Tap a call, the music cover or a message to open its app. While the island is on screen the network speed in the status bar fades out (switch in Size and place).
 - Sound: the Sound and Volume tiles, the volume panel (Small, Medium, Big, left or right, closes after 2 to 12 seconds), game panel size and optional glass blur.
