@@ -1,54 +1,34 @@
 # Changelog
 
-## Unreleased - HyperOS style island, timer, network, background activities
+## 3.1.0 - Dynamic Island 2
+Made by Ashutosh Nishad, Telegram @ashutosh_07x. Dynamic Island inspired by Smart Island by agupta07505
+(https://github.com/agupta07505/SmartIsland, GNU GPL v3.0).
 
-### New look
-- The island is now a rounded rectangle, not a pill. It keeps fairly square corners when closed and rounds them a little
-  more as it opens, like a card. The small bubble, the app pictures and every button inside are rounded squares too.
-  Pill is gone from the shapes, Rectangle is the first one. A soft shadow sits under the island and a faint light runs
-  along its top edge.
-- New theme Auto, the default: black in dark mode, light glass in light mode. Buttons, bars and text inside follow the
-  theme, so everything is readable on the light one too.
-- The main shape is always in the exact middle of the screen. The window is as wide on the left as on the right, so
-  the shape no longer moves when the small bubble comes or goes. The bubble only shows while the island is closed,
-  so an open island has the whole width.
-- Calls have wide Decline and Answer buttons, and Speaker, Mute and End with words. Charging has a ring that fills when
-  it opens and a bolt that breathes. A low battery shows in red.
+### New design
+- The island was redrawn. Four more themes (Midnight, Rose, Carbon, Gold, twelve in all), a soft shine on top of the shape,
+  and the open card is tinted with the colour of the app or the cover.
+- Live parts are drawn by hand: a wave for music, a ring for downloads and timers, a small battery for charging, a
+  pulsing dot for recording, a pulsing ring around the caller while it rings.
+- A small pop when something new arrives. Any touch keeps an open card open, so it no longer closes while you use the controls.
+- Open cards were redone: music with a seek bar you can drag, calls with Decline and Answer buttons and labels, charging
+  with current, temperature and voltage, messages with the app's name, a number for stacked messages and buttons.
 
-### Tap
-- One tap opens the island, the next tap closes it. A short message, a notification or the charging card also goes away
-  after it was closed this way. Swipe up closes it too. Press and hold still opens the app. The cards no longer open
-  the app on a tap, so the second tap always closes. Music has an open button, a message has Open and Dismiss.
+### New things it shows
+- Timers and stopwatches of your clock app, with a ring, the time left and a button that opens the clock.
+- Downloads, uploads, backups and file copies with a progress bar, and a "complete" message when they finish.
+- Bluetooth devices (with their name) and headphones, Wi-Fi, airplane mode, Do Not Disturb, and the flashlight.
+- Several messages from one app are one banner with a number. Messages show the notification's own buttons.
 
-### New things on the island
-- Timer and stopwatch. Start them in Island, on the Timer and stopwatch card. On the island the time is drawn live, and
-  the open card has Reset, Pause or Start, and +1 min for the timer or Lap for the stopwatch. When the timer ends the
-  island opens by itself and the phone vibrates. A timer that ended while the screen was off tells you when it turns on.
-- Background activities: downloads, navigation and anything else that runs in the background and reports its progress
-  show up with the app picture, a title and a bar. At most three at once, Hide keeps one away until it is over.
-  Switch: What it shows, Background activities.
-- Network: a short message when Wi-Fi connects, mobile data comes (with 5G or 4G) or the connection drops. Switch:
-  Connection changes. Optional live speed island, switch Network speed on the island. It steps aside for everything
-  else. Opening it shows download, upload, the connection and a small graph.
+### New controls
+- Idle widgets: clock, date, battery, net speed and next alarm roll over each other in the empty island.
+- Camera gap: split the small island in two halves around the front camera.
+- Swipe the small shape left or right: next and previous song, dismiss a message, or flip between two things.
+- Mute apps from an open message, respect Do Not Disturb, a switch for every new event.
+- Credit card for Smart Island in the Island tab and in About.
 
-### Animation
-- The old Fluid, swipe and press animations stay. The island, the bubble and the buttons use the same springs.
-
-## Earlier in this release - island swipe, smoother motion, room in the status bar
-
-### Dynamic Island
-- Swipe the island left or right to bring the next or the previous thing to the front (call, music, charging,
-  message and so on, round and round). The island follows your finger, gets heavier the further you pull, and a quick
-  flick is enough. The old content slides out on the side you swiped to and the new one slides in from the other side.
-  With only one thing to show the island pulls a little and springs back.
-- The small bubble is now always the thing that comes next when you swipe left, and its picture changes with a fade.
-- Pressing the island makes it shrink a little under the finger and spring back.
-- Clickable cards: tap the name of a call, the cover or title of the music, or the message text to open that app.
-  The music bar can now be dragged to scrub, and its touch area is taller.
-- New animation feel, Fluid (a hint of overshoot, no wobble). It is the default for new installs.
-- New switch in Island, Size and place: Make room in the status bar. While the island is on screen the network speed
-  in the status bar fades out, and it fades back in a moment after the island has gone. On by default.
-- The Try it button Two at once is now Swipe demo and shows three things.
+### Under the hood
+- New permissions: network state (Wi-Fi events), Bluetooth (the device name). Root grants the runtime one.
+- Nothing runs while the screen is off, same as before. New settings are saved by the existing backup (keys start with isl_).
 
 ## 3.0.0 - redesign, Dynamic Island, sound controls
 Made by Ashutosh Nishad, Telegram @ashutosh_07x

@@ -772,8 +772,10 @@ private fun AboutSub(back: () -> Unit) {
                 LicenseRow("Material icons", "Apache 2.0")
                 LicenseRow("Kotlin and kotlinx.coroutines", "Apache 2.0")
                 LicenseRow("libsu by topjohnwu", "Apache 2.0")
+                LicenseRow("Smart Island by agupta07505 (island idea)", "GPL 3.0")
             }
         }
+        item { IslandCreditCard() }
         item {
             Glass {
                 Text("Help and bug reports", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)

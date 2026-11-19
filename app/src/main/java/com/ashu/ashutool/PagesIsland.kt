@@ -11,6 +11,8 @@
 
 package com.ashu.ashutool
 
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.foundation.background
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +60,8 @@ fun IslandPage() = SubHost(
         when (k) {
             "look" -> IslandLookSub(back)
             "size" -> IslandSizeSub(back)
+            "idle" -> IslandIdleSub(back)
+            "notes" -> IslandNotesSub(back)
             else -> IslandSourcesSub(back)
         }
     }
@@ -104,19 +110,49 @@ private fun ISwitch(key: String, def: Boolean, icon: androidx.compose.ui.graphic
 /** Shows demo things on the island, so you can see a change without waiting for a call. */
 private fun demo(ctx: android.content.Context, which: Int) {
     val now = SystemClock.elapsedRealtime()
+    val buttons = listOf(IAction("Mark as read") {}, IAction("Archive") {})
     when (which) {
-        0 -> IslandHub.upsert(IAct("demo_note", IKind.NOTE, 55, "Ashutool", "This is how a notification looks on the island", null, "", ctx.packageName, Color(0xFF60A5FA), now + 7000L))
+        0 -> IslandHub.upsert(
+            IAct("demo_note", IKind.NOTE, 55, "Ashutool", "This is how a notification looks on the island", null, "", ctx.packageName, Color(0xFF60A5FA), now + 9000L, actions = buttons)
+        )
         1 -> IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 7000L))
         2 -> IslandHub.flashNet(ctx, true)
-        4 -> IslandHub.upsert(IAct("demo_live", IKind.LIVE, 20, "Downloading update", "ashutool-update.apk", null, "", ctx.packageName, Color(0xFF38BDF8), now + 20000L, 0.62f))
-        5 -> IslandHub.flash(ctx, "low", "Low battery", "15%", Icons.Outlined.BatteryAlert, Color(0xFFFFB84D), "", 5)
-        else -> {
-            // Three at once: swipe the island left or right, or tap the small bubble, and they change places
-            IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 15000L))
-            IslandHub.upsert(IAct("demo_note", IKind.NOTE, 55, "Ashutool", "Swipe the island left or right, or tap the small bubble", null, "", ctx.packageName, Color(0xFF60A5FA), now + 15000L))
-            IslandHub.upsert(IAct("demo_flash", IKind.FLASH, 60, "5G on", "Swipe to see the next one", null, "5G", "", Color(0xFF38BDF8), now + 15000L))
+        3 -> {
+            // Two at once: tap the small bubble and the two change places
+            IslandHub.upsert(IAct("demo_charge", IKind.CHARGE, 30, "Charging", "", Icons.Outlined.BatteryChargingFull, "", "", Color(0xFF34D399), now + 12000L))
+            IslandHub.upsert(IAct("demo_note", IKind.NOTE, 55, "Ashutool", "Tap the small bubble to open it", null, "", ctx.packageName, Color(0xFF60A5FA), now + 12000L))
         }
+        4 -> {
+            val end = now + 90_000L
+            IslandHub.upsert(
+                IAct("demo_timer", IKind.TIMER, 52, "Timer", "", Icons.Outlined.Timer, "", ctx.packageName, Color(0xFFFFB84D), end + 5000L, clockAt = end, countdown = true, span = 90_000L)
+            )
+        }
+        5 -> demoDownload(ctx)
+        else -> IslandHub.flash(ctx, "demo_bt", "Headphones", "Connected", Icons.Outlined.Headphones, Color(0xFF3B82F6), "", 3)
     }
+}
+
+/** A fake download that fills up in a few seconds and then says it is complete. */
+private fun demoDownload(ctx: android.content.Context) {
+    val h = Handler(Looper.getMainLooper())
+    var p = 0
+    lateinit var step: Runnable
+    step = Runnable {
+        p += 4
+        IslandHub.upsert(
+            IAct(
+                "demo_dl", IKind.PROGRESS, 35, "Downloading update", "ashutool.apk", Icons.Outlined.Download, "", ctx.packageName,
+                Color(0xFF38BDF8), SystemClock.elapsedRealtime() + 8000L, progress = (p / 100f).coerceAtMost(1f)
+            )
+        )
+        if (p < 100) h.postDelayed(step, 160L)
+        else h.postDelayed({
+            IslandHub.remove("demo_dl")
+            IslandHub.flash(ctx, "demo_done", "Download complete", "ashutool.apk", Icons.Outlined.CheckCircle, Color(0xFF34D399), "", 4)
+        }, 500L)
+    }
+    h.post(step)
 }
 
 @Composable
@@ -134,7 +170,7 @@ private fun IslandStatusCard() {
                     when {
                         !running -> "Needs the Ashutool service. Open Home once and allow root."
                         !overlayOk -> "Needs permission to draw over other apps."
-                        else -> "Shows calls, music, charging, recording and notifications over every app."
+                        else -> "Shows calls, music, timers, downloads, charging, recording, Bluetooth and notifications over every app."
                     },
                     color = TextLo, fontSize = 12.sp
                 )
@@ -147,9 +183,10 @@ private fun IslandStatusCard() {
             GlassButton(Icons.Outlined.Notifications, "Message") { demo(ctx, 0) }
             GlassButton(Icons.Outlined.BatteryChargingFull, "Charging") { demo(ctx, 1) }
             GlassButton(Icons.Outlined.SignalCellularAlt, "5G") { demo(ctx, 2) }
-            GlassButton(Icons.Outlined.BlurOn, "Swipe demo") { demo(ctx, 3) }
-            GlassButton(Icons.Outlined.Download, "Download") { demo(ctx, 4) }
-            GlassButton(Icons.Outlined.BatteryAlert, "Low battery") { demo(ctx, 5) }
+            GlassButton(Icons.Outlined.BlurOn, "Two at once") { demo(ctx, 3) }
+            GlassButton(Icons.Outlined.Timer, "Timer") { demo(ctx, 4) }
+            GlassButton(Icons.Outlined.Download, "Download") { demo(ctx, 5) }
+            GlassButton(Icons.Outlined.Headphones, "Headphones") { demo(ctx, 6) }
         }
     }
 }
@@ -169,48 +206,12 @@ fun IslandHomeCard() {
     }
 }
 
-/** Starts a timer or a stopwatch on the island. They are controlled from the island itself. */
-@Composable
-private fun ClockCard() {
-    var mins by remember { mutableFloatStateOf(5f) }
-    val mode = IslandClock.mode
-    Glass {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            GradIcon(Icons.Outlined.Timer, GFire, 44.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Timer and stopwatch", color = TextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    when (mode) {
-                        1 -> "The stopwatch is running on the island"
-                        2 -> "The timer is running on the island"
-                        else -> "Starts on the island. Tap the island to pause, add a minute or take a lap."
-                    },
-                    color = TextLo, fontSize = 12.sp
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        SectionTitle("Timer length", "${mins.toInt()} min")
-        Slider(
-            value = mins, onValueChange = { mins = it }, valueRange = 1f..120f,
-            colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = Tint.copy(alpha = 0.15f))
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            GlassButton(Icons.Outlined.Timer, "Start timer") { IslandClock.startTimer(mins.toInt() * 60_000L) }
-            GlassButton(Icons.Outlined.PlayArrow, "Stopwatch") { IslandClock.startStopwatch() }
-            if (mode != 0) GlassButton(Icons.Outlined.Stop, "Stop") { IslandClock.stop() }
-        }
-    }
-}
-
 @Composable
 private fun IslandMain(open: (String) -> Unit) {
     val ctx = LocalContext.current
     var on by remember { mutableStateOf(LockStore.bool(ctx, "isl_on", true)) }
     Page("Island", "Dynamic Island and live activities", GViolet, Icons.Outlined.BlurOn) {
         item { IslandStatusCard() }
-        item { ClockCard() }
         item {
             SwitchRow(Icons.Outlined.BlurOn, GViolet, "Dynamic Island", "Turn the island on or off", on) {
                 on = it
@@ -220,12 +221,15 @@ private fun IslandMain(open: (String) -> Unit) {
         }
         item { NavRow(Icons.Outlined.ColorLens, GPink, "Look", "Theme, shape, edge effect and animation") { open("look") } }
         item { NavRow(Icons.Outlined.Tune, GBlue, "Size and place", "Width, height, position, opacity and time on screen") { open("size") } }
-        item { NavRow(Icons.Outlined.Widgets, GTeal, "What it shows", "Calls, music, charging, recording, notifications") { open("sources") } }
+        item { NavRow(Icons.Outlined.Widgets, GTeal, "What it shows", "Calls, music, timers, downloads, Bluetooth, charging and more") { open("sources") } }
+        item { NavRow(Icons.Outlined.Schedule, GGreen, "Idle widgets", "Clock, date, battery, speed and alarm when nothing is going on") { open("idle") } }
+        item { NavRow(Icons.Outlined.Notifications, GFire, "Notifications", "Buttons, Do Not Disturb and muted apps") { open("notes") } }
         item {
             Glass {
-                Hint("With two or more things at once, for example a call, music and a message, one is the big shape and the next is a small bubble beside it. Swipe the big shape left or right to bring the next or the previous one, or tap the bubble. Tap the big shape to open it, tap it again to close it. Swipe it up to close it too. Press and hold to open the app straight away.")
+                Hint("With two things at once, for example a call and music, the more important one is the big shape and the other is a small bubble beside it. Tap the bubble and it opens while the other becomes the bubble. Tap the big shape to open it, swipe it up to close. Press and hold to open the app. On the small shape swipe left or right to change the song, dismiss a message, or flip between two things.")
             }
         }
+        item { IslandCreditCard() }
         item { CreditFooter() }
     }
 }
@@ -233,14 +237,16 @@ private fun IslandMain(open: (String) -> Unit) {
 @Composable
 private fun IslandLookSub(back: () -> Unit) {
     Page("Look", "Theme, shape and effects", GPink, Icons.Outlined.ColorLens, onBack = back) {
-        item { IChoice("Theme", ISkinNames, "isl_skin", ISkins.size - 1, GPink) }
+        item { IChoice("Theme", ISkinNames, "isl_skin", 0, GPink) }
         item { IChoice("Edge effect", IFxNames, "isl_fx", 1, GViolet) }
         item { IChoice("Shape", IShapeNames, "isl_shape", 0, GBlue) }
         item { ISlide("Roundness", "isl_round", 100, 0, 100, "%") }
-        item { IChoice("Animation", IAnimNames, "isl_anim", 4, GTeal) }
+        item { IChoice("Animation", IAnimNames, "isl_anim", 0, GTeal) }
         item { ISwitch("isl_tint", true, Icons.Outlined.AutoAwesome, GViolet, "Colour from what is playing", "The glow takes the colour of the cover or the app") }
+        item { ISwitch("isl_gloss", true, Icons.Outlined.LightMode, GFire, "Soft shine", "A light edge on top of the shape, and a tint of the app colour on open cards") }
+        item { ISwitch("isl_swipe", true, Icons.Outlined.SwapVert, GGreen, "Swipe gestures", "Swipe the small shape left or right: next and previous song, dismiss, flip between things") }
         item { ISwitch("isl_hapt", true, Icons.Outlined.TouchApp, GTeal, "Tick on touch", "A small vibration when you tap the island") }
-        item { ISwitch("isl_idle", false, Icons.Outlined.PhoneAndroid, GBlue, "Always show the shape", "Keep a small empty island on screen when nothing is going on") }
+        item { ISwitch("isl_idle", false, Icons.Outlined.PhoneAndroid, GBlue, "Always show the shape", "Keep a small island on screen when nothing is going on. Choose what it shows in Idle widgets.") }
     }
 }
 
@@ -252,11 +258,12 @@ private fun IslandSizeSub(back: () -> Unit) {
         item { ISlide("Height", "isl_h", 34, 22, 52, " dp") }
         item { ISlide("Distance from the top", "isl_top", 8, 0, 120, " dp") }
         item { ISlide("Move left or right", "isl_x", 0, -160, 160, " dp") }
+        item { ISlide("Camera gap", "isl_gap", 0, 0, 90, " dp") }
+        item { Glass { Hint("Camera gap splits the small island in two halves with your front camera between them. Set it to the width of your camera hole, about 24 to 36 dp for most phones. 0 keeps everything in one piece.") } }
         item { ISlide("Opacity", "isl_alpha", 100, 40, 100, "%") }
         item { ISlide("Stays open for", "isl_hold", 7, 0, 30, " s") }
         item { Glass { Hint("Stays open for 0 means it only closes when you swipe it up or tap it.") } }
         item { ISlide("Short messages stay for", "isl_flash", 3, 1, 10, " s") }
-        item { ISwitch("isl_hide_speed", true, Icons.Outlined.NetworkCheck, GCyan, "Make room in the status bar", "The network speed fades out while the island is on screen and comes back after it leaves") }
         item { ISwitch("isl_games", true, Icons.Outlined.SportsEsports, GTeal, "Show in games", "Keep the island on screen while you play") }
         item { ISwitch("isl_land", true, Icons.Outlined.ScreenLockPortrait, GBlue, "Show when the screen is sideways", "Turn off to hide it in landscape") }
     }
@@ -269,15 +276,60 @@ private fun IslandSourcesSub(back: () -> Unit) {
         item { ISwitch("isl_call_open", true, Icons.Outlined.Call, GGreen, "Open for an incoming call", "Shows Answer and Decline at once") }
         item { ISwitch("isl_media", true, Icons.Outlined.MusicNote, GPink, "Music and video", "YouTube, Spotify, browsers and any player, with controls") }
         item { ISlide("Keep a paused player for", "isl_media_hold", 20, 0, 120, " s") }
+        item { ISwitch("isl_timer", true, Icons.Outlined.Timer, GFire, "Timers and stopwatches", "A running timer from your clock app, with a ring and the time left") }
+        item { ISwitch("isl_progress", true, Icons.Outlined.Download, GBlue, "Downloads and transfers", "Anything with a progress bar: downloads, uploads, backups, file copies") }
         item { ISwitch("isl_charge", true, Icons.Outlined.BatteryChargingFull, GGreen, "Charging and battery", "Plug in, fully charged and low battery") }
         item { ISlide("Charging stays for", "isl_charge_sec", 5, 2, 20, " s") }
         item { ISwitch("isl_rec", true, Icons.Outlined.Videocam, GRed, "Screen recording", "Timer and a stop button") }
-        item { ISwitch("isl_live", true, Icons.Outlined.Downloading, GBlue, "Background activities", "Downloads, navigation and other things that run in the background, with their progress") }
-        item { ISwitch("isl_conn", true, Icons.Outlined.Wifi, GCyan, "Connection changes", "Wi-Fi connected, mobile data and no connection") }
-        item { ISwitch("isl_netspeed", false, Icons.Outlined.NetworkCheck, GTeal, "Network speed on the island", "Keeps a small island with the live speed on screen while nothing else is going on. Tap it for the graph.") }
         item { ISwitch("isl_ringer", true, Icons.Outlined.NotificationsOff, GFire, "Sound mode", "Ring, vibrate and silent when you change it") }
+        item { ISwitch("isl_bt", true, Icons.Outlined.Headphones, GBlue, "Bluetooth and headphones", "Name of the device that connected or disconnected") }
+        item { ISwitch("isl_wifi", true, Icons.Outlined.Wifi, GCyan, "Wi-Fi", "When Wi-Fi connects or drops") }
+        item { ISwitch("isl_air", true, Icons.Outlined.PhoneAndroid, GFire, "Airplane mode", "When flight mode is switched") }
+        item { ISwitch("isl_dnd", true, Icons.Outlined.NotificationsPaused, GViolet, "Do Not Disturb", "When Do Not Disturb is switched on or off") }
+        item { ISwitch("isl_torch", true, Icons.Outlined.WbSunny, GFire, "Flashlight", "Stays on the island while the flashlight is on") }
         item { ISwitch("isl_notif", true, Icons.Outlined.Notifications, GBlue, "Notifications", "A short banner for new messages. Needs notification access, which root gives.") }
         item { ISwitch("isl_notif_text", true, Icons.Outlined.Visibility, GViolet, "Show the message text", "Turn off to show only the app name") }
+    }
+}
+
+@Composable
+private fun IslandIdleSub(back: () -> Unit) {
+    Page("Idle widgets", "What the empty island shows", GGreen, Icons.Outlined.Schedule, onBack = back) {
+        item { Glass { Hint("These show on the small island when nothing else is going on. They roll over one by one. Turn on Always show the shape in Look, or they will not be seen. With Camera gap set, the picture is on the left of the camera and the text on the right.") } }
+        item { ISwitch("isl_idle", false, Icons.Outlined.PhoneAndroid, GBlue, "Always show the shape", "Keep the island on screen when nothing is going on") }
+        item { ISwitch("isl_idle_clock", true, Icons.Outlined.Schedule, GViolet, "Clock", "The time") }
+        item { ISwitch("isl_idle_date", true, Icons.Outlined.CalendarToday, GBlue, "Date", "Day and date") }
+        item { ISwitch("isl_idle_batt", true, Icons.Outlined.BatteryStd, GGreen, "Battery", "Level, with a bolt while charging") }
+        item { ISwitch("isl_idle_net", false, Icons.Outlined.Speed, GCyan, "Net speed", "Download speed right now") }
+        item { ISwitch("isl_idle_alarm", true, Icons.Outlined.Alarm, GFire, "Next alarm", "Only when an alarm is set") }
+        item { ISlide("Change every", "isl_idle_sec", 4, 2, 10, " s") }
+    }
+}
+
+@Composable
+private fun IslandNotesSub(back: () -> Unit) {
+    val ctx = LocalContext.current
+    val muted = remember { mutableStateListOf<String>().also { it.addAll(IslandCfg.muted(ctx).sorted()) } }
+    Page("Notifications", "How messages show on the island", GFire, Icons.Outlined.Notifications, onBack = back) {
+        item { ISwitch("isl_notif", true, Icons.Outlined.Notifications, GBlue, "Notifications", "A short banner for new messages. Several from one app become one banner with a number.") }
+        item { ISwitch("isl_notif_text", true, Icons.Outlined.Visibility, GViolet, "Show the message text", "Turn off to show only the app name") }
+        item { ISwitch("isl_buttons", true, Icons.Outlined.TouchApp, GTeal, "Buttons on messages", "Show the notification's own buttons, like Mark as read. Reply is not shown, an overlay cannot open the keyboard.") }
+        item { ISwitch("isl_respect_dnd", true, Icons.Outlined.NotificationsPaused, GViolet, "Respect Do Not Disturb", "No banners while Do Not Disturb is on. Calls still show.") }
+        item { SectionTitle("Muted apps", "${muted.size}") }
+        if (muted.isEmpty()) item { Glass { Hint("Nothing is muted. Open a message on the island and tap the bell with a cross to mute that app. Muted apps never show on the island.") } }
+        items(muted.toList()) { pkg ->
+            Glass {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppIcon(pkg, 36.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(islandAppName(ctx, pkg), color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(pkg, color = TextLo, fontSize = 11.sp)
+                    }
+                    Chip("Unmute", true, GTeal) { IslandCfg.mute(ctx, pkg, false); muted.remove(pkg) }
+                }
+            }
+        }
     }
 }
 

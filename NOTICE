@@ -31,4 +31,14 @@ These terms apply to the Ashutool source code and to every copy and modified ver
 Third party libraries keep their own licences: Jetpack Compose, AndroidX, Kotlin, kotlinx.coroutines
 and libsu (all Apache License 2.0).
 
+Inspiration and credit
+----------------------
+The Dynamic Island of Ashutool is inspired by Smart Island by agupta07505
+(https://github.com/agupta07505/SmartIsland, GNU General Public License v3.0, Telegram https://telegram.me/SmartIslandApp).
+Smart Island gave the idea and the list of things an island can show: live activities, idle widgets, swipe gestures,
+buttons on notifications and rules per app. The island of Ashutool has its own design and its own code, written for
+Ashutool, and no source code of Smart Island was copied. If code is ever copied from Smart Island into Ashutool, its
+copyright notice and the GNU GPL v3.0 must be kept for that code. Please keep this credit in every copy and modified
+version of Ashutool, next to the author credit above.
+
 This file is a plain statement of the author's wishes under the GNU GPL. It is not legal advice.

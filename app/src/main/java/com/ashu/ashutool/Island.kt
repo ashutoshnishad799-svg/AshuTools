@@ -11,6 +11,10 @@
 package com.ashu.ashutool
 
 import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -18,6 +22,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -25,8 +30,10 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.ConnectivityManager
 import android.net.Network
-import android.net.TrafficStats
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -52,32 +59,31 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 // =====================================================================================================================
 // The Dynamic Island: a small black or glass shape at the top of the screen that shows what is going on.
 //
-//   IslandCfg    every setting, kept as Compose state so the island changes live while you edit it
-//   IAct         one thing the island can show (a call, music, charging, recording, a notification, a short message)
-//   IslandHub    the list of things being shown, which one has the focus, and whether the island is expanded
-//   IslandMedia  what is playing, read from the media sessions of every player (YouTube, Spotify, a browser, ...)
-//   IslandSources  listens for charging, ringer changes and recording
-//   IslandHost   owns the overlay window, grows it before the island grows and shrinks it after the island shrinks
+//   IslandCfg      every setting, kept as Compose state so the island changes live while you edit it
+//   IAct           one thing the island can show (a call, music, a timer, a download, charging, a notification ...)
+//   IslandHub      the list of things being shown, which one has the focus, and whether the island is expanded
+//   IslandMedia    what is playing, read from the media sessions of every player (YouTube, Spotify, a browser, ...)
+//   IslandSources  listens for charging, sound mode, recording, Bluetooth, headphones, Wi-Fi, flight mode, DND, torch
+//   IslandHost     owns the overlay window, grows it before the island grows and shrinks it after the island shrinks
+//   IslandUi.kt    the look: Ashutool's own island design (shape, skins, compact and expanded cards, idle widgets)
 //
 // With two things going on at once (say a call and music) the island shows the more important one as the main
 // shape and the other as a small bubble beside it. Tap the bubble and the two change places, with an animation.
-// Swipe the main shape left or right to bring the next or the previous thing to the front. While the island is on
-// screen the network speed in the status bar fades out, see StatusSpeed in Hud.kt.
-// The island is a rounded rectangle, kept exactly in the middle of the screen. The small bubble sits to its right and the
-// window leaves the same room on the left, so the main shape never moves when a bubble comes or goes.
+//
+// Credit: the idea of an island with live activities, idle widgets, swipe gestures and per-app rules is inspired by
+// Smart Island by agupta07505 (https://github.com/agupta07505/SmartIsland, GNU GPL v3.0). The code here was written for
+// Ashutool, see IslandCredits.kt and NOTICE.
 // =====================================================================================================================
 
-enum class IKind { CALL, MEDIA, CHARGE, RECORD, FLASH, NOTE, TIMER, NET, LIVE }
+enum class IKind { CALL, MEDIA, CHARGE, RECORD, FLASH, NOTE, PROGRESS, TIMER }
+
+/** A button on an expanded card, for example "Mark as read" on a notification or "Turn off" on the flashlight. */
+class IAction(val label: String, val run: () -> Unit)
 
 /** One thing the island shows. Calls, music, charging and recording read their live numbers while they are drawn. */
 class IAct(
@@ -94,8 +100,19 @@ class IAct(
     val accent: Color = Color(0xFF34D399),
     /** SystemClock.elapsedRealtime() at which it goes away by itself, or 0 when it stays until it ends. */
     val until: Long = 0L,
-    /** For a background activity: how far it is, 0 to 1, or -1 when it has no numbers. */
-    val progress: Float = -1f
+    /** PROGRESS: how far along, 0 to 1. */
+    val progress: Float = 0f,
+    /** NOTE: how many notifications of this app are stacked in this one. */
+    val count: Int = 1,
+    /** TIMER: elapsedRealtime at which a countdown ends, or at which a stopwatch started. */
+    val clockAt: Long = 0L,
+    val countdown: Boolean = false,
+    /** TIMER countdown: the whole length in ms, so the ring knows how full it is. */
+    val span: Long = 0L,
+    /** Buttons shown on the expanded card. */
+    val actions: List<IAction> = emptyList(),
+    /** What "Open" does. When null the app of [pkg] is opened. */
+    val onOpen: (() -> Unit)? = null
 )
 
 object IslandCfg {
@@ -116,6 +133,10 @@ object IslandCfg {
     var flashSec by mutableIntStateOf(3)
     var hapt by mutableStateOf(true)
     var tint by mutableStateOf(true)
+    var gloss by mutableStateOf(true)
+    var swipe by mutableStateOf(true)
+    /** Width of the camera hole in dp. Above 0 the island is split in two halves around it. */
+    var gap by mutableIntStateOf(0)
     var call by mutableStateOf(true)
     var callOpen by mutableStateOf(true)
     var media by mutableStateOf(true)
@@ -126,23 +147,31 @@ object IslandCfg {
     var ringer by mutableStateOf(true)
     var notif by mutableStateOf(true)
     var notifText by mutableStateOf(true)
+    var buttons by mutableStateOf(true)
+    var respectDnd by mutableStateOf(true)
+    var timer by mutableStateOf(true)
+    var progress by mutableStateOf(true)
+    var bt by mutableStateOf(true)
+    var wifi by mutableStateOf(true)
+    var air by mutableStateOf(true)
+    var torch by mutableStateOf(true)
+    var dnd by mutableStateOf(true)
+    var idleClock by mutableStateOf(true)
+    var idleDate by mutableStateOf(true)
+    var idleBatt by mutableStateOf(true)
+    var idleNet by mutableStateOf(false)
+    var idleAlarm by mutableStateOf(true)
+    var idleSec by mutableIntStateOf(4)
     var games by mutableStateOf(true)
     var landscape by mutableStateOf(true)
-    /** Fade the network speed out of the status bar while the island is on screen. */
-    var hideSpeed by mutableStateOf(true)
-    /** Downloads, navigation and other things that run in the background. */
-    var live by mutableStateOf(true)
-    /** Wi-Fi and mobile data coming and going. */
-    var conn by mutableStateOf(true)
-    /** Keeps a small island with the live speed on screen when nothing else is going on. */
-    var netSpeed by mutableStateOf(false)
-    /** The phone is in dark mode. Used by the Auto theme. */
-    var dark by mutableStateOf(true)
+
+    /** True when at least one idle widget is switched on. Without any, the idle shape stays empty. */
+    val idleAny: Boolean get() = idleClock || idleDate || idleBatt || idleNet || idleAlarm
 
     fun load(c: Context) {
         on = LockStore.bool(c, "isl_on", true)
         idlePill = LockStore.bool(c, "isl_idle", false)
-        skin = LockStore.int(c, "isl_skin", ISkins.size - 1).coerceIn(0, ISkins.size - 1)
+        skin = LockStore.int(c, "isl_skin", 0).coerceIn(0, ISkins.size - 1)
         fx = LockStore.int(c, "isl_fx", 1).coerceIn(0, 4)
         shape = LockStore.int(c, "isl_shape", 0).coerceIn(0, 3)
         round = LockStore.int(c, "isl_round", 100).coerceIn(0, 100)
@@ -152,11 +181,14 @@ object IslandCfg {
         x = LockStore.int(c, "isl_x", 0).coerceIn(-160, 160)
         scale = LockStore.int(c, "isl_scale", 100).coerceIn(70, 150)
         alpha = LockStore.int(c, "isl_alpha", 100).coerceIn(40, 100)
-        anim = LockStore.int(c, "isl_anim", 4).coerceIn(0, 4)
+        anim = LockStore.int(c, "isl_anim", 0).coerceIn(0, 3)
         hold = LockStore.int(c, "isl_hold", 7).coerceIn(0, 30)
         flashSec = LockStore.int(c, "isl_flash", 3).coerceIn(1, 10)
         hapt = LockStore.bool(c, "isl_hapt", true)
         tint = LockStore.bool(c, "isl_tint", true)
+        gloss = LockStore.bool(c, "isl_gloss", true)
+        swipe = LockStore.bool(c, "isl_swipe", true)
+        gap = LockStore.int(c, "isl_gap", 0).coerceIn(0, 90)
         call = LockStore.bool(c, "isl_call", true)
         callOpen = LockStore.bool(c, "isl_call_open", true)
         media = LockStore.bool(c, "isl_media", true)
@@ -167,13 +199,23 @@ object IslandCfg {
         ringer = LockStore.bool(c, "isl_ringer", true)
         notif = LockStore.bool(c, "isl_notif", true)
         notifText = LockStore.bool(c, "isl_notif_text", true)
+        buttons = LockStore.bool(c, "isl_buttons", true)
+        respectDnd = LockStore.bool(c, "isl_respect_dnd", true)
+        timer = LockStore.bool(c, "isl_timer", true)
+        progress = LockStore.bool(c, "isl_progress", true)
+        bt = LockStore.bool(c, "isl_bt", true)
+        wifi = LockStore.bool(c, "isl_wifi", true)
+        air = LockStore.bool(c, "isl_air", true)
+        torch = LockStore.bool(c, "isl_torch", true)
+        dnd = LockStore.bool(c, "isl_dnd", true)
+        idleClock = LockStore.bool(c, "isl_idle_clock", true)
+        idleDate = LockStore.bool(c, "isl_idle_date", true)
+        idleBatt = LockStore.bool(c, "isl_idle_batt", true)
+        idleNet = LockStore.bool(c, "isl_idle_net", false)
+        idleAlarm = LockStore.bool(c, "isl_idle_alarm", true)
+        idleSec = LockStore.int(c, "isl_idle_sec", 4).coerceIn(2, 10)
         games = LockStore.bool(c, "isl_games", true)
         landscape = LockStore.bool(c, "isl_land", true)
-        hideSpeed = LockStore.bool(c, "isl_hide_speed", true)
-        live = LockStore.bool(c, "isl_live", true)
-        conn = LockStore.bool(c, "isl_conn", true)
-        netSpeed = LockStore.bool(c, "isl_netspeed", false)
-        dark = (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
 
     /** Saves one number setting and applies it at once. */
@@ -182,10 +224,26 @@ object IslandCfg {
     /** Saves one switch and applies it at once. */
     fun putBool(c: Context, key: String, v: Boolean) { LockStore.setBool(c, key, v); load(c) }
 
-    /** True when the island needs the notification listener: for the caller name, music and notifications. */
+    /** Apps whose notifications never show on the island. */
+    fun muted(c: Context): Set<String> = LockStore.set(c, "isl_block")
+
+    fun mute(c: Context, pkg: String, on: Boolean) {
+        val s = muted(c).toMutableSet()
+        if (on) s.add(pkg) else s.remove(pkg)
+        LockStore.setSet(c, "isl_block", s)
+    }
+
+    /** True when the island needs the notification listener: for the caller name, music, timers and notifications. */
     fun needsListener(c: Context): Boolean = LockStore.bool(c, "isl_on", true) &&
-        (LockStore.bool(c, "isl_media", true) || LockStore.bool(c, "isl_notif", true) || LockStore.bool(c, "isl_call", true) || LockStore.bool(c, "isl_live", true))
+        (LockStore.bool(c, "isl_media", true) || LockStore.bool(c, "isl_notif", true) || LockStore.bool(c, "isl_call", true) ||
+            LockStore.bool(c, "isl_timer", true) || LockStore.bool(c, "isl_progress", true))
 }
+
+/** The name of an app as the user knows it, or the package name when it cannot be read. */
+fun islandAppName(ctx: Context, pkg: String): String = try {
+    val pm = ctx.packageManager
+    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+} catch (e: Exception) { pkg }
 
 /** What is playing right now. Filled by [MediaWatcher], drawn by the island. */
 object IslandMedia {
@@ -244,43 +302,16 @@ object IslandHub {
     var screenWdp by mutableIntStateOf(360)
     /** Counts touches, so the island stays open while you use it and the count restarts every time. */
     var touch by mutableIntStateOf(0)
-    /** Which way the last swipe went: 1 brought the next thing, -1 the one before, 0 is no swipe. The animation reads it. */
-    var slide by mutableIntStateOf(0)
+
+    /** Which notifications of one app are stacked in its banner, so the banner can say "3". */
+    private val noteKeys = HashMap<String, MutableSet<String>>()
+    /** The longest a countdown has been seen, so its ring knows how full it is. */
+    private val timerSpan = HashMap<String, Long>()
 
     private fun now() = SystemClock.elapsedRealtime()
 
     fun mainAct(): IAct? = acts.firstOrNull { it.id == focusId } ?: acts.firstOrNull()
-    /** The small bubble: the thing that comes next when you swipe left. */
-    fun sideAct(): IAct? {
-        val m = mainAct() ?: return null
-        if (acts.size < 2) return null
-        val i = acts.indexOfFirst { it.id == m.id }
-        return acts[(i + 1) % acts.size]
-    }
-
-    fun has(id: String): Boolean = acts.any { it.id == id }
-
-    /** Opens the island by itself, for example when a timer ends. */
-    fun expandNow() { main.post { if (mainAct() != null) { expanded = true; touch++ } } }
-
-    /** True while the island is drawn. The status bar uses it to make room for the island. */
-    val onScreen: Boolean get() = IslandCfg.on && shown && window() != null
-
-    /**
-     * Swipe: [step] 1 brings the next thing to the front, -1 the one before it. Goes round at the ends.
-     * Returns false when there is nothing else to show.
-     */
-    fun cycle(step: Int): Boolean {
-        val list = acts
-        if (list.size < 2) return false
-        val m = mainAct() ?: return false
-        val i = list.indexOfFirst { it.id == m.id }
-        val n = ((i + step) % list.size + list.size) % list.size
-        slide = if (step > 0) 1 else -1
-        focusId = list[n].id
-        touch++
-        return true
-    }
+    fun sideAct(): IAct? { val m = mainAct(); return acts.firstOrNull { it.id != m?.id } }
 
     fun upsert(a: IAct) {
         main.post {
@@ -299,7 +330,10 @@ object IslandHub {
 
     private fun expire(id: String, until: Long) {
         val cur = acts.firstOrNull { it.id == id } ?: return
-        if (cur.until == until) removeNow(id)
+        if (cur.until != until) return
+        // Never pull a card away from under the finger: try again a little later
+        if (expanded && mainAct()?.id == id) { main.postDelayed({ expire(id, until) }, 1500L); return }
+        removeNow(id)
     }
 
     fun remove(id: String) { main.post { removeNow(id) } }
@@ -307,6 +341,8 @@ object IslandHub {
     private fun removeNow(id: String) {
         if (acts.none { it.id == id }) return
         acts = acts.filter { it.id != id }
+        if (id.startsWith("n:")) noteKeys.remove(id.substring(2))
+        if (id.startsWith("t:")) timerSpan.remove(id)
         if (focusId == id) focusId = acts.firstOrNull()?.id ?: ""
         if (acts.isEmpty()) expanded = false
     }
@@ -317,13 +353,27 @@ object IslandHub {
     /** The bubble was tapped: it becomes the main shape and opens. The old main shape becomes the bubble. */
     fun focusAndOpen(id: String) { main.post { if (acts.any { it.id == id }) { focusId = id; expanded = true; touch++ } } }
 
+    /** A swipe on the small shape: show the next (1) or the previous (-1) thing. */
+    fun cycle(dir: Int) {
+        main.post {
+            if (acts.size > 1) {
+                val i = acts.indexOfFirst { it.id == mainAct()?.id }.coerceAtLeast(0)
+                focusId = acts[(i + dir + acts.size) % acts.size].id
+                touch++
+            }
+        }
+    }
+
     fun toggleExpanded() { main.post { if (mainAct() != null) { expanded = !expanded; touch++ } } }
     fun collapse() { main.post { expanded = false } }
 
     /** A short message that goes away by itself. */
-    fun flash(ctx: Context, id: String, title: String, sub: String, icon: ImageVector?, accent: Color, glyph: String = "", sec: Int = IslandCfg.flashSec) {
+    fun flash(
+        ctx: Context, id: String, title: String, sub: String, icon: ImageVector?, accent: Color,
+        glyph: String = "", sec: Int = IslandCfg.flashSec, actions: List<IAction> = emptyList()
+    ) {
         if (!LockStore.bool(ctx, "isl_on", true)) return
-        upsert(IAct(id, IKind.FLASH, 60, title, sub, icon, glyph, "", accent, now() + sec * 1000L))
+        upsert(IAct(id, IKind.FLASH, 60, title, sub, icon, glyph, "", accent, now() + sec * 1000L, actions = actions))
     }
 
     /** 5G or 4G was switched. Shown the moment you tap the tile. */
@@ -362,21 +412,25 @@ object IslandHub {
         if (!charging && level <= 5 && prev > 5) flash(ctx, "low", "Battery very low", "$level%", Icons.Outlined.BatteryAlert, Color(0xFFFF6B8B), "", 6)
     }
 
-    // ---- notifications
-    private fun appLabel(ctx: Context, pkg: String): String =
-        try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg }
+    // ---- notifications, timers and downloads
 
-    fun onNotification(ctx: Context, sbn: StatusBarNotification) {
+    /**
+     * Every notification of every app comes through here. A running timer or stopwatch of a clock app and a download
+     * with a progress bar become their own live shapes. Everything else becomes a short banner.
+     * [initial] is true for the ones that were already in the shade when the listener connected: only timers and
+     * downloads are picked up from those, old messages are not shown again.
+     */
+    fun onNotification(ctx: Context, sbn: StatusBarNotification, initial: Boolean = false) {
         try {
             if (!LockStore.bool(ctx, "isl_on", true)) return
             val n = sbn.notification ?: return
             val pkg = sbn.packageName
             if (pkg == ctx.packageName || pkg == "android" || pkg == "com.android.systemui") return
-            // Ongoing things (downloads, navigation) become a live activity. A message about the same thing replaces it.
-            if (sbn.isOngoing) { onOngoing(ctx, sbn); return }
-            remove("l:${sbn.key}")
-            if (!LockStore.bool(ctx, "isl_notif", true)) return
-            if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
+            val ex = n.extras ?: return
+            if (timerNote(ctx, sbn, n, ex)) return
+            if (progressNote(ctx, sbn, n, ex)) return
+            if (initial || !LockStore.bool(ctx, "isl_notif", true)) return
+            if (sbn.isOngoing || (n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
             if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_TRANSPORT ||
                 n.category == Notification.CATEGORY_PROGRESS || n.category == Notification.CATEGORY_SERVICE ||
                 n.category == Notification.CATEGORY_SYSTEM || n.category == Notification.CATEGORY_STATUS
@@ -384,80 +438,132 @@ object IslandHub {
             if (pkg in Safety.dialerPkgs(ctx)) return
             // The app you are looking at does not need to tell you about itself
             if (pkg == Fg.pkg) return
-            val ex = n.extras ?: return
+            if (pkg in IslandCfg.muted(ctx)) return
+            if (LockStore.bool(ctx, "isl_respect_dnd", true) && dndOn(ctx)) return
             val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-            val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+            var text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+            if (text.isEmpty()) text = ex.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim().orEmpty()
             if (title.isEmpty() && text.isEmpty()) return
             val showText = LockStore.bool(ctx, "isl_notif_text", true)
-            val label = appLabel(ctx, pkg)
+            val label = islandAppName(ctx, pkg)
+            // Several notifications of one app are one banner with a number
+            val keys = noteKeys.getOrPut(pkg) { HashSet() }
+            keys.add(sbn.key)
+            val buttons = if (LockStore.bool(ctx, "isl_buttons", true) && showText) noteActions(n) else emptyList()
             upsert(
                 IAct(
                     "n:$pkg", IKind.NOTE, 55,
                     if (showText) title.ifEmpty { label } else label,
                     if (showText) text else "New notification",
-                    null, "", pkg, Color(0xFF60A5FA), now() + 6000L
+                    null, "", pkg, Color(0xFF60A5FA), now() + 6000L,
+                    count = keys.size, actions = buttons, onOpen = openWith(ctx, n.contentIntent, pkg)
                 )
             )
         } catch (_: Exception) {}
     }
 
-    /** Live activities the user hid. They stay hidden until the notification itself goes away. */
-    private val liveMuted = HashSet<String>()
-
-    /** Takes a thing off the island because the user closed it. A live activity then stays away until it is over. */
-    fun dismiss(id: String) {
-        if (id.startsWith("l:")) liveMuted.add(id)
-        remove(id)
+    /** A notification was removed, so its download or timer goes too. */
+    fun onNotificationRemoved(sbn: StatusBarNotification) {
+        remove("p:" + sbn.key)
+        remove("t:" + sbn.key)
     }
 
-    /** The last numbers drawn for each live activity, so an app that reports every few hundred ms does not make the island redraw every time. */
-    private val liveSeen = HashMap<String, Long>()
+    private fun dndOn(ctx: Context): Boolean = try {
+        val f = ctx.getSystemService(NotificationManager::class.java).currentInterruptionFilter
+        f != NotificationManager.INTERRUPTION_FILTER_ALL && f != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+    } catch (_: Exception) { false }
 
-    /** A download, navigation, workout or anything else that runs in the background and reports how far it is. */
-    fun onOngoing(ctx: Context, sbn: StatusBarNotification) {
-        try {
-            if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_live", true)) return
-            val n = sbn.notification ?: return
-            val pkg = sbn.packageName
-            if (pkg == ctx.packageName || pkg == "android" || pkg == "com.android.systemui") return
-            if (pkg in Safety.dialerPkgs(ctx)) return
-            if (n.category == Notification.CATEGORY_CALL || n.category == Notification.CATEGORY_TRANSPORT) return
-            if ((n.flags and Notification.FLAG_GROUP_SUMMARY) != 0) return
-            val ex = n.extras ?: return
-            val max = ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
-            val prog = ex.getInt(Notification.EXTRA_PROGRESS, 0)
-            val indeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
-            val cat = n.category ?: ""
-            val wanted = max > 0 || indeterminate || cat == "navigation" || cat == "stopwatch" || cat == "workout"
-            if (!wanted) return
-            val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
-            val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
-            val id = "l:${sbn.key}"
-            if (id in liveMuted) return
-            val frac = if (max > 0 && !indeterminate) (prog.toFloat() / max).coerceIn(0f, 1f) else -1f
-            val sig = (if (frac >= 0f) (frac * 100f).toLong() else -1L) * 31L + title.hashCode() * 17L + text.hashCode()
-            if (liveSeen[id] == sig && has(id)) return
-            liveSeen[id] = sig
-            // At most three at once, so a phone full of services never fills the island
-            if (!has(id) && acts.count { it.id.startsWith("l:") } >= 3) return
-            val label = appLabel(ctx, pkg)
-            upsert(IAct(id, IKind.LIVE, 20, title.ifEmpty { label }, text, null, "", pkg, Color(0xFF38BDF8), 0L, frac))
-        } catch (_: Exception) {}
+    /** What a tap on Open does: the notification's own screen if it has one, otherwise the app. */
+    private fun openWith(ctx: Context, pi: PendingIntent?, pkg: String): (() -> Unit)? {
+        if (pi == null) return null
+        return { try { pi.send() } catch (_: Exception) { openApp(ctx, pkg) } }
     }
 
-    /** A notification went away. Its live activity goes with it. */
-    fun onNotificationGone(sbn: StatusBarNotification) {
-        val id = "l:${sbn.key}"
-        liveSeen.remove(id)
-        liveMuted.remove(id)
-        remove(id)
+    /** Up to three buttons of the notification. A Reply needs a keyboard, which an overlay cannot have, so it is left out. */
+    private fun noteActions(n: Notification): List<IAction> {
+        val out = ArrayList<IAction>()
+        val arr = n.actions ?: return out
+        for (a in arr) {
+            if (out.size >= 3) break
+            val label = a.title?.toString()?.trim().orEmpty()
+            val pi = a.actionIntent ?: continue
+            if (label.isEmpty()) continue
+            val ri = a.remoteInputs
+            if (ri != null && ri.isNotEmpty()) continue
+            out.add(IAction(label) { try { pi.send() } catch (_: Exception) {} })
+        }
+        return out
     }
 
-    /**
-     * What the island wants its window to be, in dp. Null means nothing is shown and the window can go.
-     * The window is as wide on the left as on the right, so the main shape stays in the middle of the screen.
-     * The small bubble only shows while the island is closed, so an open island has the whole width.
-     */
+    /** A running timer or stopwatch of a clock app. They show a chronometer in their notification. */
+    private fun timerNote(ctx: Context, sbn: StatusBarNotification, n: Notification, ex: Bundle): Boolean {
+        val pkg = sbn.packageName
+        if (!pkg.contains("clock", ignoreCase = true)) return false
+        val id = "t:" + sbn.key
+        val shows = ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false) && n.`when` > 0L
+        if (!shows || !LockStore.bool(ctx, "isl_timer", true)) {
+            // A paused or finished timer no longer shows a clock
+            if (acts.any { it.id == id }) remove(id)
+            return false
+        }
+        val down = ex.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false)
+        val el = now()
+        val wall = System.currentTimeMillis()
+        val at: Long
+        var span = 0L
+        if (down) {
+            val left = (n.`when` - wall).coerceAtLeast(0L)
+            at = el + left
+            span = maxOf(timerSpan[id] ?: 0L, left)
+            timerSpan[id] = span
+        } else {
+            at = el - (wall - n.`when`).coerceAtLeast(0L)
+        }
+        upsert(
+            IAct(
+                id, IKind.TIMER, 52, if (down) "Timer" else "Stopwatch", "", Icons.Outlined.Timer, "", pkg, Color(0xFFFFB84D),
+                if (down) at + 120_000L else 0L,
+                clockAt = at, countdown = down, span = span, onOpen = openWith(ctx, n.contentIntent, pkg)
+            )
+        )
+        return true
+    }
+
+    /** A download, upload, backup or copy with a progress bar. */
+    private fun progressNote(ctx: Context, sbn: StatusBarNotification, n: Notification, ex: Bundle): Boolean {
+        val pkg = sbn.packageName
+        val id = "p:" + sbn.key
+        val max = ex.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val cur = ex.getInt(Notification.EXTRA_PROGRESS, 0)
+        val indeterminate = ex.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
+        val cat = n.category
+        val skip = cat == Notification.CATEGORY_CALL || cat == Notification.CATEGORY_TRANSPORT || cat == Notification.CATEGORY_STATUS ||
+            cat == Notification.CATEGORY_SYSTEM || cat == "navigation" || pkg in Safety.dialerPkgs(ctx)
+        val isProgress = LockStore.bool(ctx, "isl_progress", true) && !skip && max > 0 && !indeterminate &&
+            (cat == Notification.CATEGORY_PROGRESS || sbn.isOngoing)
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+        val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        if (!isProgress) {
+            val had = acts.firstOrNull { it.id == id }
+            if (had != null) {
+                // The app replaced the progress bar with a plain notification, usually "download complete"
+                remove(id)
+                flash(ctx, "pdone", title.ifEmpty { had.title }, text.ifEmpty { "Finished" }, Icons.Outlined.CheckCircle, Color(0xFF34D399), "", 4)
+                return true
+            }
+            return false
+        }
+        val frac = (cur.toFloat() / max).coerceIn(0f, 1f)
+        upsert(
+            IAct(
+                id, IKind.PROGRESS, 35, title.ifEmpty { islandAppName(ctx, pkg) }, text, Icons.Outlined.Download, "", pkg,
+                Color(0xFF38BDF8), now() + 45_000L, progress = frac, onOpen = openWith(ctx, n.contentIntent, pkg)
+            )
+        )
+        return true
+    }
+
+    /** What the island wants its window to be, in dp. Null means nothing is shown and the window can go. */
     fun window(): IslandWin? {
         if (!IslandCfg.on) return null
         val m = mainAct()
@@ -465,14 +571,16 @@ object IslandHub {
         val d = IslandCfg.scale / 100f
         val h = IslandCfg.h * d
         val pad = IslandLayout.PAD
-        if (m == null) return IslandWin(IslandCfg.w * d + 2 * pad, h + 2 * pad)
+        if (m == null) return IslandWin(IslandLayout.idleW(d) + 2 * pad, h + 2 * pad)
         if (expanded) {
-            val w = IslandLayout.expandedW(screenWdp.toFloat(), d)
-            return IslandWin(w + 2 * pad, IslandLayout.expandedH(m.kind, d) + 2 * pad)
+            val bubble = if (sideAct() != null) h + IslandLayout.GAP else 0f
+            val w = IslandLayout.expandedW(screenWdp - bubble, d)
+            return IslandWin(w + bubble + 2 * pad, IslandLayout.expandedH(m, d) + 2 * pad)
         }
-        val slot = if (sideAct() != null) IslandLayout.GAP + h else 0f
+        val side = sideAct()
         val mw = IslandLayout.compactW(m.kind, d)
-        return IslandWin(mw + 2 * slot + 2 * pad, h + 2 * pad)
+        val total = mw + (if (side != null) IslandLayout.GAP + h else 0f)
+        return IslandWin(total + 2 * pad, h + 2 * pad)
     }
 }
 
@@ -483,38 +591,64 @@ object IslandLayout {
     const val PAD = 16f
     const val GAP = 8f
 
+    /** How much room the live part on the right of the small shape needs, in dp at 100%. */
+    private fun trail(kind: IKind): Float = when (kind) {
+        IKind.CALL -> 50f
+        IKind.MEDIA -> 34f
+        IKind.CHARGE -> 54f
+        IKind.RECORD -> 50f
+        IKind.NOTE -> 30f
+        IKind.FLASH -> 62f
+        IKind.PROGRESS -> 52f
+        IKind.TIMER -> 52f
+    }
+
+    /** One half of the small shape when it is split around the camera, in dp at 100%. Both halves are equally wide. */
+    fun side(kind: IKind): Float {
+        val h = IslandCfg.h.toFloat()
+        return maxOf(h * 0.88f, h * 0.22f + trail(kind) + 4f)
+    }
+
     fun compactW(kind: IKind, d: Float): Float {
-        val base = IslandCfg.w * d
+        if (IslandCfg.gap > 0) return maxOf((IslandCfg.gap + 2f * side(kind)) * d, IslandCfg.w * d)
         val extra = when (kind) {
             IKind.CALL -> 78f
             IKind.MEDIA -> 64f
-            IKind.CHARGE -> 52f
+            IKind.CHARGE -> 56f
             IKind.RECORD -> 56f
-            IKind.NOTE -> 92f
+            IKind.NOTE -> 96f
             IKind.FLASH -> 66f
-            IKind.TIMER -> 70f
-            IKind.NET -> 86f
-            IKind.LIVE -> 92f
+            IKind.PROGRESS -> 76f
+            IKind.TIMER -> 80f
         }
-        return base + extra * d
+        return IslandCfg.w * d + extra * d
     }
 
-    /** [avail] is the width of the screen in dp. */
+    /** The empty shape with the idle widgets in it. */
+    fun idleW(d: Float): Float {
+        if (!IslandCfg.idleAny) return IslandCfg.w * d
+        if (IslandCfg.gap > 0) return maxOf((IslandCfg.gap + 2f * 64f) * d, IslandCfg.w * d)
+        return (IslandCfg.w + 30f) * d
+    }
+
+    /** [avail] is the width of the screen in dp, minus the bubble when there is one. */
     fun expandedW(avail: Float, d: Float): Float = minOf(avail - 24f, 352f * (0.9f + 0.1f * d))
 
-    fun expandedH(kind: IKind, d: Float): Float {
-        val h = when (kind) {
-            IKind.CALL -> 158f
-            IKind.MEDIA -> 184f
-            IKind.CHARGE -> 124f
-            IKind.RECORD -> 116f
-            IKind.NOTE -> 128f
-            IKind.FLASH -> 98f
-            IKind.TIMER -> 180f
-            IKind.NET -> 152f
-            IKind.LIVE -> 132f
+    /** Room above the content of an expanded card, so nothing hides behind the camera. In dp at 100%. */
+    fun topRoom(): Float = if (IslandCfg.gap > 0) IslandCfg.h * 0.55f else 0f
+
+    fun expandedH(a: IAct, d: Float): Float {
+        val h = when (a.kind) {
+            IKind.CALL -> 160f
+            IKind.MEDIA -> 190f
+            IKind.CHARGE -> 142f
+            IKind.RECORD -> 108f
+            IKind.NOTE -> if (a.actions.isNotEmpty() && IslandCfg.buttons) 184f else 148f
+            IKind.FLASH -> if (a.actions.isNotEmpty()) 128f else 100f
+            IKind.PROGRESS -> 140f
+            IKind.TIMER -> 136f
         }
-        return h * (0.9f + 0.1f * d)
+        return (h + topRoom()) * d
     }
 }
 
@@ -628,55 +762,30 @@ class MediaWatcher(private val ctx: Context) {
     }
 }
 
-/** Charging, ringer mode and recording. Kept apart from the window so it works whether or not the island is on screen. */
+
+/**
+ * Charging, sound mode, recording, Bluetooth, headphones, Wi-Fi, flight mode, Do Not Disturb and the flashlight.
+ * Kept apart from the window so it works whether or not the island is on screen. Each of them has its own switch,
+ * read when the event arrives, so a switch works at once.
+ */
 class IslandSources(private val ctx: Context) {
     private var rx: BroadcastReceiver? = null
+    private var torchCb: CameraManager.TorchCallback? = null
     private var netCb: ConnectivityManager.NetworkCallback? = null
-    private val h = Handler(Looper.getMainLooper())
-    private var lastConn = ""
-
-    /** Looks at what the phone is connected to, and shows a short message when it changed. */
-    private val checkConn = Runnable {
-        try {
-            if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_conn", true)) return@Runnable
-            IslandNet.readType(ctx)
-            val label = if (IslandNet.online) IslandNet.type else "Offline"
-            // The first answer is how things are at the start, not a change
-            if (lastConn.isEmpty()) { lastConn = label; return@Runnable }
-            if (label == lastConn) return@Runnable
-            lastConn = label
-            when {
-                !IslandNet.online -> IslandHub.flash(ctx, "conn", "No connection", "Network", Icons.Outlined.WifiOff, Color(0xFFFF6B8B), "", 3)
-                IslandNet.wifi -> IslandHub.flash(ctx, "conn", "Wi-Fi connected", "Network", Icons.Outlined.Wifi, Color(0xFF34D399), "", 3)
-                IslandNet.type == "5G" || IslandNet.type == "4G" ->
-                    IslandHub.flash(ctx, "conn", "Mobile data", IslandNet.type, null, Color(0xFF38BDF8), IslandNet.type, 3)
-                else -> IslandHub.flash(ctx, "conn", IslandNet.type, "Network", Icons.Outlined.SignalCellularAlt, Color(0xFF38BDF8), "", 3)
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun startConn() {
-        if (netCb != null) return
-        try {
-            val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
-            val cb = object : ConnectivityManager.NetworkCallback() {
-                // Switching from Wi-Fi to mobile data loses one network and finds another a moment later. Wait for both.
-                override fun onAvailable(network: Network) { h.removeCallbacks(checkConn); h.postDelayed(checkConn, 1000L) }
-                override fun onLost(network: Network) { h.removeCallbacks(checkConn); h.postDelayed(checkConn, 1400L) }
-            }
-            cm.registerDefaultNetworkCallback(cb)
-            netCb = cb
-            IslandNet.readType(ctx)
-            lastConn = if (IslandNet.online) IslandNet.type else "Offline"
-        } catch (_: Exception) {}
-    }
+    private var torchId: String? = null
+    private var born = 0L
+    private var lastWifi = 0L
+    private val lastBt = HashMap<String, Long>()
 
     fun start() {
         if (rx != null) return
+        born = SystemClock.elapsedRealtime()
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 try {
                     if (!LockStore.bool(c, "isl_on", true)) return
+                    // Some of these are sticky: the system sends the current state the moment we register. Not news.
+                    if (isInitialStickyBroadcast) return
                     when (i.action) {
                         Intent.ACTION_POWER_CONNECTED -> if (LockStore.bool(c, "isl_charge", true)) {
                             IslandHub.upsert(
@@ -690,6 +799,24 @@ class IslandSources(private val ctx: Context) {
                             val col = when (m) { Ringer.SILENT -> Color(0xFFFF6B8B); Ringer.VIBRATE -> Color(0xFFFFB84D); else -> Color(0xFF34D399) }
                             IslandHub.flash(c, "ringer", Ringer.label(m), "Sound mode", Ringer.icon(m), col, "", 2)
                         }
+                        Intent.ACTION_HEADSET_PLUG -> if (LockStore.bool(c, "isl_bt", true)) {
+                            val plugged = i.getIntExtra("state", 0) == 1
+                            IslandHub.flash(c, "headset", "Headphones", if (plugged) "Connected" else "Disconnected", Icons.Outlined.Headphones, Color(0xFF3B82F6), "", 3)
+                        }
+                        BluetoothDevice.ACTION_ACL_CONNECTED -> if (LockStore.bool(c, "isl_bt", true)) bluetooth(c, i, true)
+                        BluetoothDevice.ACTION_ACL_DISCONNECTED -> if (LockStore.bool(c, "isl_bt", true)) bluetooth(c, i, false)
+                        Intent.ACTION_AIRPLANE_MODE_CHANGED -> if (LockStore.bool(c, "isl_air", true)) {
+                            val state = i.getBooleanExtra("state", false)
+                            IslandHub.flash(c, "air", "Airplane mode", if (state) "On" else "Off", Icons.Outlined.AirplanemodeActive, Color(0xFFFFB84D), "", 3)
+                        }
+                        NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> if (LockStore.bool(c, "isl_dnd", true)) {
+                            val f = c.getSystemService(NotificationManager::class.java).currentInterruptionFilter
+                            val active = f != NotificationManager.INTERRUPTION_FILTER_ALL && f != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+                            IslandHub.flash(
+                                c, "dnd", "Do Not Disturb", if (active) "On" else "Off",
+                                if (active) Icons.Outlined.DoNotDisturbOn else Icons.Outlined.DoNotDisturbOff, Color(0xFF8B5CF6), "", 3
+                            )
+                        }
                     }
                 } catch (_: Exception) {}
             }
@@ -698,17 +825,110 @@ class IslandSources(private val ctx: Context) {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(Intent.ACTION_HEADSET_PLUG)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
         }
         try { ContextCompat.registerReceiver(ctx, r, f, ContextCompat.RECEIVER_NOT_EXPORTED); rx = r } catch (_: Exception) {}
-        startConn()
+        // Bluetooth has its own filter: if its permission is missing it must not take the others down with it
+        val bf = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+        }
+        try { ContextCompat.registerReceiver(ctx, r, bf, ContextCompat.RECEIVER_NOT_EXPORTED) } catch (_: Exception) {}
+        startTorch()
+        startWifi()
     }
 
     fun stop() {
         rx?.let { try { ctx.unregisterReceiver(it) } catch (_: Exception) {} }
         rx = null
-        h.removeCallbacksAndMessages(null)
+        torchCb?.let { try { ctx.getSystemService(CameraManager::class.java)?.unregisterTorchCallback(it) } catch (_: Exception) {} }
+        torchCb = null
         netCb?.let { try { ctx.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } catch (_: Exception) {} }
         netCb = null
+        torchId = null
+        IslandHub.remove("torch")
+    }
+
+    /** A Bluetooth device connected or disconnected. Its name needs the Bluetooth permission, which root grants. */
+    @Suppress("DEPRECATION")
+    private fun bluetooth(c: Context, i: Intent, connected: Boolean) {
+        val dev: BluetoothDevice? =
+            if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            else i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        var name = ""
+        var audio = false
+        try {
+            name = dev?.name.orEmpty()
+            val cls = dev?.bluetoothClass
+            audio = cls != null && cls.majorDeviceClass == BluetoothClass.Device.Major.AUDIO_VIDEO
+        } catch (_: SecurityException) {}
+        val key = (dev?.address ?: "?") + connected
+        val t = SystemClock.elapsedRealtime()
+        // Watches and bands reconnect all the time: one message per device every few seconds is enough
+        if (t - (lastBt[key] ?: 0L) < 8000L) return
+        lastBt[key] = t
+        IslandHub.flash(
+            c, "bt", name.ifEmpty { "Bluetooth" }, if (connected) "Connected" else "Disconnected",
+            if (audio) Icons.Outlined.Headphones else Icons.Outlined.Bluetooth, Color(0xFF3B82F6), "", 3
+        )
+    }
+
+    /** Wi-Fi coming and going, through the network callback so no location permission is needed. */
+    private fun startWifi() {
+        try {
+            val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) { wifi(true) }
+                override fun onLost(network: Network) { wifi(false) }
+            }
+            cm.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(), cb)
+            netCb = cb
+        } catch (_: Exception) {}
+    }
+
+    private fun wifi(up: Boolean) {
+        val t = SystemClock.elapsedRealtime()
+        // The callback reports the Wi-Fi that was already connected when we started: not news
+        if (t - born < 5000L || t - lastWifi < 6000L) return
+        if (!LockStore.bool(ctx, "isl_on", true) || !LockStore.bool(ctx, "isl_wifi", true)) return
+        lastWifi = t
+        IslandHub.flash(
+            ctx, "wifi", "Wi-Fi", if (up) "Connected" else "Disconnected",
+            if (up) Icons.Outlined.Wifi else Icons.Outlined.WifiOff, if (up) Color(0xFF22D3EE) else Color(0xFF94A3B8), "", 3
+        )
+    }
+
+    /** The flashlight stays on the island for as long as it is on, with a button to switch it off. */
+    private fun startTorch() {
+        try {
+            val cm = ctx.getSystemService(CameraManager::class.java) ?: return
+            val cb = object : CameraManager.TorchCallback() {
+                override fun onTorchModeChanged(cameraId: String, enabled: Boolean) { torch(cm, cameraId, enabled) }
+            }
+            cm.registerTorchCallback(cb, Handler(Looper.getMainLooper()))
+            torchCb = cb
+        } catch (_: Exception) {}
+    }
+
+    private fun torch(cm: CameraManager, id: String, on: Boolean) {
+        if (!LockStore.bool(ctx, "isl_on", true)) return
+        if (on) {
+            if (!LockStore.bool(ctx, "isl_torch", true)) return
+            torchId = id
+            IslandHub.upsert(
+                IAct(
+                    "torch", IKind.FLASH, 45, "Flashlight", "On", Icons.Outlined.FlashOn, "", "", Color(0xFFFFD54A), 0L,
+                    actions = listOf(IAction("Turn off") {
+                        try { cm.setTorchMode(id, false) } catch (_: Exception) { toast(ctx, "Switch it off from the quick settings") }
+                    })
+                )
+            )
+        } else if (id == torchId) {
+            torchId = null
+            IslandHub.remove("torch")
+        }
     }
 }
 
@@ -743,48 +963,7 @@ class IslandHost(private val ctx: Context) {
         updateScreen()
         s.launch { snapshotFlow { IslandHub.window() }.collect { applyWin(it) } }
         s.launch { snapshotFlow { Recorder.running }.collect { onRecording(it) } }
-        // A timer is only watched while one runs, the speed only while it is switched on
-        s.launch { snapshotFlow { IslandClock.mode == 2 && IslandClock.running }.collectLatest { on -> if (on) clockLoop() } }
-        s.launch { snapshotFlow { IslandCfg.on && IslandCfg.netSpeed }.collectLatest { on -> if (on) netLoop() else IslandHub.remove("net") } }
         startMedia()
-    }
-
-    /** Ends the countdown the moment it reaches zero. */
-    private suspend fun clockLoop() {
-        while (currentCoroutineContext().isActive) {
-            if (!hidden && Monitor.screenOn) IslandClock.poll(ctx)
-            delay(if (hidden || !Monitor.screenOn) 3000L else 250L)
-        }
-    }
-
-    /**
-     * Live network speed, shown as a small island while nothing else is going on. As soon as something else comes
-     * (a call, music, a message) the speed island steps aside, and it comes back when that is over.
-     */
-    private suspend fun netLoop() = coroutineScope {
-        launch {
-            snapshotFlow { IslandHub.acts.any { it.id != "net" } }.collect { others ->
-                if (others) IslandHub.remove("net")
-                else if (!IslandHub.has("net")) IslandHub.upsert(IAct("net", IKind.NET, 5, "Network", "", null, "", "", Color(0xFF38BDF8)))
-            }
-        }
-        var rx = 0L
-        var tx = 0L
-        var at = 0L
-        var n = 0
-        while (isActive) {
-            if (hidden || !Monitor.screenOn) { at = 0L; delay(2000L); continue }
-            val now = SystemClock.elapsedRealtime()
-            val nrx = TrafficStats.getTotalRxBytes()
-            val ntx = TrafficStats.getTotalTxBytes()
-            if (at != 0L && nrx >= 0L && ntx >= 0L) {
-                val dt = (now - at) / 1000f
-                if (dt > 0.2f) IslandNet.push(((nrx - rx) / dt).toLong(), ((ntx - tx) / dt).toLong())
-            }
-            rx = nrx; tx = ntx; at = now
-            if (n++ % 3 == 0) IslandNet.readType(ctx)
-            delay(1000L)
-        }
     }
 
     fun stop() {
@@ -829,8 +1008,6 @@ class IslandHost(private val ctx: Context) {
         IslandCfg.load(ctx)
         applyWin(IslandHub.window())
         startMedia()
-        // A timer that ran out while the screen was off tells you now
-        IslandClock.poll(ctx)
     }
 
     /** Switches the media watching on or off to match the settings. Safe to call at any time. */

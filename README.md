@@ -12,8 +12,9 @@ Free and open source, GNU GPL v3.0 or later. See [LICENSE](LICENSE) and [NOTICE]
 - **Control:** CPU governor and frequency, memory and swap, charging limit, app standby and background rules.
 - **Apps:** app limits, reels blocker, app lock with PIN or pattern, hidden apps vault, firewall.
 - **Games:** game launcher, edge game bar with three profiles (standard, performance, battery saver), FPS meter, game mode (nothing is automatic until you turn it on), screen recording, a glass side panel with game tools (5G / 4G, sound mode, volume panel, DND, popups, clear RAM, screenshot, record and more).
-- **Dynamic Island:** a shape at the top of the screen over every app for calls, music and video, charging, recording, sound mode, 5G / 4G changes and notifications.
-  Eight themes, edge effects, four shapes, four animation feels, fully adjustable size and place. With two things at once the second is a small bubble, tap it to swap.
+- **Dynamic Island:** a shape at the top of the screen over every app. Calls (caller name, Answer, Decline), music and video (cover, seek bar, wave), **timers and stopwatches** from your clock app, **downloads and transfers** with a progress ring, charging, screen recording, sound mode, 5G / 4G, Bluetooth and headphones, Wi-Fi, airplane mode, Do Not Disturb, the flashlight, and notifications with the app's own buttons.
+  **Idle widgets** (clock, date, battery, net speed, next alarm) roll over each other when nothing is going on. **Camera gap** splits the island around your front camera. **Swipe** the small shape for next and previous song, dismiss, or to flip between things. Mute apps, respect Do Not Disturb, 12 themes, 5 edge effects, 4 shapes, 4 animation feels, fully adjustable size and place.
+  With two things at once the second is a small bubble, tap it to swap. Inspired by [Smart Island](https://github.com/agupta07505/SmartIsland) by agupta07505, see Credits below.
 - **Calls:** compact call banner with the caller's name and floating call controls while you play.
 - **Quick settings tiles:** 5G / 4G (instant, shows 5G or 4G on the tile), Sound (ring, vibrate and silent in one tile) and Volume (opens the Ashutool volume panel in three sizes). Optional network speed in the status bar.
 - **Battery notification:** level, current and watts, drain rate, idle drain, screen time, time left, and more, each with its own switch.
@@ -60,6 +61,13 @@ repackaging it harder. No app can be made impossible to modify, and the source i
 so the real protection is the licence. If you copy the work, give credit.
 
 This is the author's statement of intent, not legal advice.
+
+## Credits
+- **Dynamic Island** is inspired by [**Smart Island**](https://github.com/agupta07505/SmartIsland) by **agupta07505** (GNU GPL v3.0,
+  [Telegram](https://telegram.me/SmartIslandApp)). Smart Island gave the idea of live activities, idle widgets, swipe gestures and
+  rules per app. The island in Ashutool has its own design and its own code, written for Ashutool, and no Smart Island source
+  code was copied. If you like this island, go and star the original.
+- Libraries: Jetpack Compose, AndroidX, Kotlin, kotlinx.coroutines and libsu (Apache License 2.0).
 
 ## Contributing and support
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs: Settings, About, Copy debug info, then open an issue.
