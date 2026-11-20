@@ -32,7 +32,7 @@ other permissions through root. If something is missing, Settings, Permissions s
 
 ## Build
 ```
-gradle assembleRelease
+gradle :app:assembleRelease
 ```
 Needs JDK 17 and Gradle 9.7.1 (the GitHub Actions workflow does exactly this). The first build is slower, it also builds the Smart Island module. Without a signing key the release APK
 is signed with the debug key, so it installs and runs as a *community build*.

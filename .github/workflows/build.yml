@@ -51,7 +51,7 @@ jobs:
       - name: Build Release APK
         env:
           CERT_SHA256: ${{ vars.CERT_SHA256 }}
-        run: gradle assembleRelease
+        run: gradle :app:assembleRelease
 
       - name: Checksum
         run: |
