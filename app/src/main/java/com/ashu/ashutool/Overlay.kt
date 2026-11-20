@@ -677,7 +677,7 @@ class GameSidebar(private val ctx: Context) {
         var touches by remember { mutableStateOf(false) }
         var net by remember { mutableStateOf(NetMode.known(ctx)) }
         var ringer by remember { mutableIntStateOf(Ringer.mode(ctx)) }
-        var island by remember { mutableStateOf(LockStore.bool(ctx, "isl_on", true)) }
+        var island by remember { mutableStateOf(IslandControl.isOn(ctx)) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 touches = Root.run("settings get system show_touches").firstOrNull()?.trim() == "1"
@@ -783,8 +783,7 @@ class GameSidebar(private val ctx: Context) {
                 }
                 MiniTool(Icons.Outlined.BlurOn, null, "Island", island, Modifier.weight(1f)) {
                     island = !island
-                    IslandCfg.putBool(ctx, "isl_on", island)
-                    MonitorService.instance?.islandChanged()
+                    io.launch { IslandControl.setEnabled(ctx, island) }
                 }
                 Spacer(Modifier.weight(1f))
             }

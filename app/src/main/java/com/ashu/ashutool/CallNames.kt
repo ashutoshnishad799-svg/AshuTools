@@ -27,17 +27,11 @@ import android.service.notification.StatusBarNotification
 class CallNameService : NotificationListenerService() {
     override fun onListenerConnected() {
         // A call that started ringing before the listener was bound is already in the shade
-        // Timers and downloads that are already running are picked up too, old messages are not shown again
-        try { activeNotifications?.forEach { handle(it); IslandHub.onNotification(this, it, initial = true) } } catch (_: Exception) {}
+        try { activeNotifications?.forEach { handle(it) } } catch (_: Exception) {}
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         handle(sbn)
-        IslandHub.onNotification(this, sbn)
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        IslandHub.onNotificationRemoved(sbn)
     }
 
     private fun handle(sbn: StatusBarNotification) {
@@ -56,7 +50,7 @@ class CallNameService : NotificationListenerService() {
 
 /**
  * Switches the call name listener on only while it is needed: in a game, everywhere if the user chose to
- * show call banners outside games, or while the Dynamic Island wants music, notifications or the caller name. The rest of the time the component is disabled, so the system does not bind it,
+ * show call banners outside games. The Dynamic Island (Smart Island) has its own listener and does not need this one. The rest of the time the component is disabled, so the system does not bind it,
  * it holds no memory and it never wakes up for notifications.
  */
 object CallNames {
@@ -64,8 +58,7 @@ object CallNames {
 
     /** Whether the listener has any job right now. */
     fun wanted(ctx: Context): Boolean =
-        (LockStore.bool(ctx, "calls_banner", true) && (Fg.game != null || !LockStore.bool(ctx, "calls_game_only", true))) ||
-            IslandCfg.needsListener(ctx)
+        (LockStore.bool(ctx, "calls_banner", true) && (Fg.game != null || !LockStore.bool(ctx, "calls_game_only", true)))
 
     /** Enables or disables the listener. Safe to call as often as you like, it only acts on a change. */
     fun set(ctx: Context, on: Boolean) {

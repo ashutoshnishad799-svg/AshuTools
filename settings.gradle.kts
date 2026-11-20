@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Ashutool"
 include(":app")
+include(":smartisland")

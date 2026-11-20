@@ -37,7 +37,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '9.7.1'
 
       - name: Prepare signing key
         if: env.HAS_KEYSTORE == 'true'

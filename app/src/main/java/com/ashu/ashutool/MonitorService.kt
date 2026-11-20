@@ -45,7 +45,6 @@ class MonitorService : Service() {
     private var banner: IncomingBanner? = null
     private var hud: GameHud? = null
     private var statusSpeed: StatusSpeed? = null
-    private var island: IslandHost? = null
     private var watcher: CallWatcher? = null
     private var screenRx: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -63,9 +62,6 @@ class MonitorService : Service() {
     /** For the Games page: is the bar window on screen right now, and if not, why. */
     fun barShown(): Boolean = sidebar?.isShown == true
     fun barError(): String = sidebar?.error ?: ""
-
-    /** The Dynamic Island was switched on or off, or one of its sources changed. Applies it at once. */
-    fun islandChanged() { handler.post { island?.relayout(); syncListener() } }
 
     /** Checks again right now, for example after a game was added by hand. */
     fun recheck() { handler.post { reeval() } }
@@ -101,14 +97,11 @@ class MonitorService : Service() {
             banner = IncomingBanner(this)
             hud = GameHud(this)
             statusSpeed = StatusSpeed(this)
-            island = IslandHost(this)
             // The notification listener only runs while a game needs it. Until then it stays switched off.
             CallNames.set(this, false)
             registerScreen()
             Fg.listener = { onFg(it) }
             tryWatch()
-            // The Dynamic Island, and the notification listener it reads music and notifications through
-            island?.start()
             handler.post { syncListener() }
             NetMode.warm(this)
             s.launch(Dispatchers.IO) {
@@ -134,7 +127,7 @@ class MonitorService : Service() {
     /** Games turn the screen. The bar and the floating pills are placed again for the new size. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val fix = Runnable { sidebar?.relayout(); island?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
+        val fix = Runnable { sidebar?.relayout(); recPill?.reposition(); callPill?.reposition(); if (statusSpeed != null && SpeedState.text.isNotEmpty()) speedWake.trySend(Unit) }
         handler.postDelayed(fix, 150)
         handler.postDelayed(fix, 700)
     }
@@ -145,7 +138,6 @@ class MonitorService : Service() {
         Fg.game = null
         scope?.cancel()
         sidebar?.hide(); recPill?.hide(); callPill?.hide(); banner?.hide(); hud?.hide(); statusSpeed?.hide()
-        island?.stop()
         NetMode.shutdown()
         try { screenRx?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         CallNames.set(this, false)
@@ -188,7 +180,6 @@ class MonitorService : Service() {
         if (now - lastNotify < (if (!Monitor.screenOn) 110_000 else if (Monitor.uiVisible || Monitor.boost) 5000 else 20_000)) return
         lastNotify = now
         nm.notify(ID, build(s))
-        IslandHub.onBattery(this, s.batt.level, s.batt.charging)
         if (!Guard.safe) scope?.launch(Dispatchers.IO) { Saver.auto(this@MonitorService, s) }
     }
 
@@ -216,7 +207,6 @@ class MonitorService : Service() {
     private fun screenOff() {
         Monitor.screenOn = false
         Session.screen(this, false)
-        island?.sleep()
         sidebar?.hide()
         hud?.hide()
         statusSpeed?.hide()
@@ -234,7 +224,6 @@ class MonitorService : Service() {
     private fun screenOn() {
         Monitor.screenOn = true
         Session.screen(this, true)
-        island?.wake()
         dozeJob?.cancel()
         Monitor.kick(this)
         scope?.launch(Dispatchers.IO) { Saver.screenOn(this@MonitorService) }
@@ -433,7 +422,6 @@ class MonitorService : Service() {
         if (ringing && allowed && LockStore.bool(this, "calls_banner", true)) banner?.show() else banner?.hide()
         if (talking && allowed && LockStore.bool(this, "calls_mini", true)) callPill?.show() else callPill?.hide()
         syncListener()
-        island?.refresh()
     }
 
     /**
@@ -557,7 +545,6 @@ class MonitorService : Service() {
             }
         }
         syncCallUi()
-        IslandHub.onCall(this)
     }
 
     companion object {

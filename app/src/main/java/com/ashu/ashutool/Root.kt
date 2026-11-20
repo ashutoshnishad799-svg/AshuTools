@@ -93,8 +93,8 @@ object Root {
             // lets the Sound tile switch to silent without asking
             "cmd notification allow_dnd $pkg"
         )
-        // Lets the Dynamic Island read the name of a Bluetooth device. Android 12 and newer only. Separate, so a failure here changes nothing above.
-        if (android.os.Build.VERSION.SDK_INT >= 31) ok("pm grant $pkg android.permission.BLUETOOTH_CONNECT")
         if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)
+        // The Dynamic Island (Smart Island) is set up once by itself, so it works without opening any settings
+        IslandControl.firstSetup(ctx)
     }
 }

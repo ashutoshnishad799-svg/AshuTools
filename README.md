@@ -12,9 +12,8 @@ Free and open source, GNU GPL v3.0 or later. See [LICENSE](LICENSE) and [NOTICE]
 - **Control:** CPU governor and frequency, memory and swap, charging limit, app standby and background rules.
 - **Apps:** app limits, reels blocker, app lock with PIN or pattern, hidden apps vault, firewall.
 - **Games:** game launcher, edge game bar with three profiles (standard, performance, battery saver), FPS meter, game mode (nothing is automatic until you turn it on), screen recording, a glass side panel with game tools (5G / 4G, sound mode, volume panel, DND, popups, clear RAM, screenshot, record and more).
-- **Dynamic Island:** a shape at the top of the screen over every app. Calls (caller name, Answer, Decline), music and video (cover, seek bar, wave), **timers and stopwatches** from your clock app, **downloads and transfers** with a progress ring, charging, screen recording, sound mode, 5G / 4G, Bluetooth and headphones, Wi-Fi, airplane mode, Do Not Disturb, the flashlight, and notifications with the app's own buttons.
-  **Idle widgets** (clock, date, battery, net speed, next alarm) roll over each other when nothing is going on. **Camera gap** splits the island around your front camera. **Swipe** the small shape for next and previous song, dismiss, or to flip between things. Mute apps, respect Do Not Disturb, 12 themes, 5 edge effects, 4 shapes, 4 animation feels, fully adjustable size and place.
-  With two things at once the second is a small bubble, tap it to swap. Inspired by [Smart Island](https://github.com/agupta07505/SmartIsland) by agupta07505, see Credits below.
+- **Dynamic Island:** the full **[Smart Island](https://github.com/agupta07505/SmartIsland)** by Animesh Gupta (agupta07505) is built in, with all of its features: calls, music and video, timers and stopwatch, downloads and transfers, charging, Bluetooth, Wi-Fi, hotspot, screen and audio recording, navigation, notification cards with actions, idle widgets, pinned apps, utilities, themes and much more. Ashutool sets it up for you through root and gives it one tab.
+  Eight themes, edge effects, four shapes, four animation feels, fully adjustable size and place. With two things at once the second is a small bubble, tap it to swap.
 - **Calls:** compact call banner with the caller's name and floating call controls while you play.
 - **Quick settings tiles:** 5G / 4G (instant, shows 5G or 4G on the tile), Sound (ring, vibrate and silent in one tile) and Volume (opens the Ashutool volume panel in three sizes). Optional network speed in the status bar.
 - **Battery notification:** level, current and watts, drain rate, idle drain, screen time, time left, and more, each with its own switch.
@@ -25,7 +24,7 @@ More detail is in [app/README.md](app/README.md).
 
 ## Requirements
 - Android 8.0 or newer, rooted (Magisk or KernelSU). The Dynamic Island needs permission to draw over other apps, which root grants.
-- No internet permission. Ashutool does not send any data anywhere.
+- Ashutool itself never sends your data anywhere. The built-in Smart Island has the internet permission for its weather widget and its update check, see its [privacy notes](smartisland/UPSTREAM_README.md).
 
 ## Install
 Download the APK from the Releases page, install it, open it and grant root. Ashutool then grants itself the
@@ -35,7 +34,7 @@ other permissions through root. If something is missing, Settings, Permissions s
 ```
 gradle assembleRelease
 ```
-Needs JDK 17 and Gradle 8.7 (the GitHub Actions workflow does exactly this). Without a signing key the release APK
+Needs JDK 17 and Gradle 9.7.1 (the GitHub Actions workflow does exactly this). The first build is slower, it also builds the Smart Island module. Without a signing key the release APK
 is signed with the debug key, so it installs and runs as a *community build*.
 
 ### Official signed release (maintainer)
@@ -46,6 +45,13 @@ is signed with the debug key, so it installs and runs as a *community build*.
 4. Push a tag such as `v2.0.0`. The workflow builds, signs and publishes the APK with its checksum.
 
 The app then shows *Official build* in About when it was signed with that key.
+
+## Credits
+- **Dynamic Island: [Smart Island](https://github.com/agupta07505/SmartIsland) by Animesh Gupta ([agupta07505](https://github.com/agupta07505)), GNU GPL v3.0**
+  ([Telegram](https://telegram.me/SmartIslandApp)). Its code is included in the folder `smartisland/` with its own notices. It is
+  the original code, changed only where it had to be to run inside Ashutool. The list of changes is in
+  [`smartisland/UPSTREAM.md`](smartisland/UPSTREAM.md). Please star the original repository.
+- Libraries: Jetpack Compose, AndroidX, Kotlin, kotlinx.coroutines, Hilt, Shizuku API, HiddenApiBypass and libsu.
 
 ## Credit, licence and modified copies
 Ashutool is open source and you are welcome to learn from it, fix it and build on it. In return the licence
@@ -61,13 +67,6 @@ repackaging it harder. No app can be made impossible to modify, and the source i
 so the real protection is the licence. If you copy the work, give credit.
 
 This is the author's statement of intent, not legal advice.
-
-## Credits
-- **Dynamic Island** is inspired by [**Smart Island**](https://github.com/agupta07505/SmartIsland) by **agupta07505** (GNU GPL v3.0,
-  [Telegram](https://telegram.me/SmartIslandApp)). Smart Island gave the idea of live activities, idle widgets, swipe gestures and
-  rules per app. The island in Ashutool has its own design and its own code, written for Ashutool, and no Smart Island source
-  code was copied. If you like this island, go and star the original.
-- Libraries: Jetpack Compose, AndroidX, Kotlin, kotlinx.coroutines and libsu (Apache License 2.0).
 
 ## Contributing and support
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs: Settings, About, Copy debug info, then open an issue.

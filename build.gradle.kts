@@ -7,8 +7,16 @@
  * Keep this header and the author credit in every copy and modified version.
  */
 
-plugins {
-    id("com.android.application") version "8.6.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.0.20" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+// The toolchain is the one of Smart Island 7.6.0, which the :smartisland module needs (AGP 9, Kotlin 2.3, Hilt).
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:9.1.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.3.21")
+        classpath("com.google.dagger:hilt-android-gradle-plugin:2.60.1")
+    }
 }

@@ -772,7 +772,8 @@ private fun AboutSub(back: () -> Unit) {
                 LicenseRow("Material icons", "Apache 2.0")
                 LicenseRow("Kotlin and kotlinx.coroutines", "Apache 2.0")
                 LicenseRow("libsu by topjohnwu", "Apache 2.0")
-                LicenseRow("Smart Island by agupta07505 (island idea)", "GPL 3.0")
+                LicenseRow("Smart Island by Animesh Gupta (agupta07505), the Dynamic Island", "GPL 3.0")
+                LicenseRow("Inter Display, Lora and Poppins fonts, inside Smart Island", "OFL 1.1")
             }
         }
         item { IslandCreditCard() }

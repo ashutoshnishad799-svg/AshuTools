@@ -1,34 +1,19 @@
 # Changelog
 
-## 3.1.0 - Dynamic Island 2
-Made by Ashutosh Nishad, Telegram @ashutosh_07x. Dynamic Island inspired by Smart Island by agupta07505
-(https://github.com/agupta07505/SmartIsland, GNU GPL v3.0).
+## 3.1.0 - the full Smart Island inside
+Made by Ashutosh Nishad, Telegram @ashutosh_07x. Dynamic Island: Smart Island 7.6.0 by Animesh Gupta (agupta07505),
+https://github.com/agupta07505/SmartIsland, GNU GPL v3.0.
 
-### New design
-- The island was redrawn. Four more themes (Midnight, Rose, Carbon, Gold, twelve in all), a soft shine on top of the shape,
-  and the open card is tinted with the colour of the app or the cover.
-- Live parts are drawn by hand: a wave for music, a ring for downloads and timers, a small battery for charging, a
-  pulsing dot for recording, a pulsing ring around the caller while it rings.
-- A small pop when something new arrives. Any touch keeps an open card open, so it no longer closes while you use the controls.
-- Open cards were redone: music with a seek bar you can drag, calls with Decline and Answer buttons and labels, charging
-  with current, temperature and voltage, messages with the app's name, a number for stacked messages and buttons.
-
-### New things it shows
-- Timers and stopwatches of your clock app, with a ring, the time left and a button that opens the clock.
-- Downloads, uploads, backups and file copies with a progress bar, and a "complete" message when they finish.
-- Bluetooth devices (with their name) and headphones, Wi-Fi, airplane mode, Do Not Disturb, and the flashlight.
-- Several messages from one app are one banner with a number. Messages show the notification's own buttons.
-
-### New controls
-- Idle widgets: clock, date, battery, net speed and next alarm roll over each other in the empty island.
-- Camera gap: split the small island in two halves around the front camera.
-- Swipe the small shape left or right: next and previous song, dismiss a message, or flip between two things.
-- Mute apps from an open message, respect Do Not Disturb, a switch for every new event.
+- The Dynamic Island of Ashutool is now **Smart Island**, the whole app, copied as the module `smartisland/` with its notices
+  and a list of the changes (`smartisland/UPSTREAM.md`). It replaces the small island Ashutool had.
+- The Island tab switches it on and off, shows its status (island, notification access, overlay permission), opens its full
+  settings screen and sets it up through root: accessibility, notification access, overlay, sensitive notification text,
+  Bluetooth, background running and the optional permissions. It is set up once by itself on the first start.
+- The Island switch on the Home page and in the game panel switch the same island.
 - Credit card for Smart Island in the Island tab and in About.
-
-### Under the hood
-- New permissions: network state (Wi-Fi events), Bluetooth (the device name). Root grants the runtime one.
-- Nothing runs while the screen is off, same as before. New settings are saved by the existing backup (keys start with isl_).
+- Build: Android Gradle Plugin 9.1.1, Gradle 9.7.1, Kotlin 2.3.21, Compose 2026.02, Hilt 2.60.1, compileSdk 36 (the toolchain of Smart Island).
+  Ashutool's own Application class is now the Hilt application.
+- New permissions come with the module (internet for the weather widget and the update check of Smart Island, location, calendar, and others, see its manifest).
 
 ## 3.0.0 - redesign, Dynamic Island, sound controls
 Made by Ashutosh Nishad, Telegram @ashutosh_07x

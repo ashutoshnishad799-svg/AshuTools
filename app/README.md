@@ -15,13 +15,8 @@ Bigger tabs have sub pages:
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
-- Island: the Dynamic Island (inspired by Smart Island by agupta07505, see NOTICE). Look (12 themes, 5 edge effects, 4 shapes, roundness,
-  4 animation feels, soft shine, swipe gestures), Size and place (overall size, width, height, top, left and right, camera gap, opacity,
-  time open, short message time, show in games and in landscape), What it shows (calls, music and video with controls, timers and
-  stopwatches, downloads and transfers, charging, recording, sound mode, Bluetooth and headphones, Wi-Fi, airplane mode, Do Not Disturb,
-  flashlight, notifications), Idle widgets (clock, date, battery, net speed, next alarm) and Notifications (buttons, Do Not Disturb, muted apps).
-  Music, timers, downloads and notifications are read through the notification listener, which root allows by itself.
-  With two things at once the second is a small bubble: tap it to swap. Swipe the small shape left or right to change the song or dismiss.
+- Island: the Dynamic Island, which is Smart Island by Animesh Gupta (agupta07505, GPL v3.0, module `smartisland/`). The tab shows its status,
+  switches it on and off, opens its own full settings screen and sets it up through root. The same switch is on the Home page and in the game panel.
 - Sound: the Sound and Volume tiles, the volume panel (Small, Medium, Big, left or right, closes after 2 to 12 seconds), game panel size and optional glass blur.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   screen recording with a draggable timer pill and a notification Stop button. The panel has 5G / 4G, Sound, Volume and Island buttons.

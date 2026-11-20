@@ -165,11 +165,16 @@ object CrashLog {
     }
 }
 
-/** Application class. Installs the crash log before anything else runs. */
+/**
+ * Application class. Installs the crash log before anything else runs. It is also the Hilt application that the Smart Island
+ * code (module :smartisland, the Dynamic Island) needs, see smartisland/UPSTREAM.md.
+ */
+@dagger.hilt.android.HiltAndroidApp
 class AshuApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        com.agupta07505.smartisland.AshutoolBridge.onAppCreate(this)
     }
 
     /** When the app is no longer on screen the icon pictures are let go. The service keeps running without them. */
