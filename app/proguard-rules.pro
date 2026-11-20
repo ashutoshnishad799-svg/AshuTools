@@ -17,3 +17,6 @@
 # Started as root with app_process to switch 5G and 4G, so its entry point must keep its name
 -keep class com.ashu.ashutool.NetModeMain { public static void main(java.lang.String[]); }
 
+
+# Smart Island runs with R8 optimization off. A library may not set this global option, so it is set here.
+-dontoptimize

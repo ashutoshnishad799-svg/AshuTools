@@ -50,4 +50,4 @@
 
 # R8's optimizer miscompiles the very large IslandOverlayView composable (dex VerifyError:
 # "type Float unexpected as arg to if-eqz/if-nez"). Keep shrinking/obfuscation, skip optimization.
--dontoptimize
+# -dontoptimize moved to app/proguard-rules.pro
