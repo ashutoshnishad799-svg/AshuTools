@@ -129,7 +129,11 @@ fun LiquidGlassBackdrop(
 @Composable
 fun ThemedBackdrop(modifier: Modifier = Modifier) {
     val colors = LocalGlassBackdropColors.current
-    if (LocalLiquidGlass.current && colors != null) {
+    // Modified for Ashutool (2026): the host's own background, when it gave a look.
+    val host = com.agupta07505.smartisland.ui.HostTheme.look
+    if (host != null) {
+        com.agupta07505.smartisland.ui.AshutoolBackdrop(host, modifier)
+    } else if (LocalLiquidGlass.current && colors != null) {
         LiquidGlassBackdrop(
             base = colors.base,
             glowA = colors.glowA,

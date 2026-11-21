@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.*
@@ -32,7 +33,7 @@ import kotlinx.coroutines.*
 // --------------------------------------------------------------------- Home
 
 @Composable
-fun HomePage(root: Boolean?) {
+fun HomePage(root: Boolean?, go: (P) -> Unit) {
     val s by Monitor.snap.collectAsState()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -51,6 +52,7 @@ fun HomePage(root: Boolean?) {
         }
     }
     val b = s.batt
+    val rate = s.ratePh?.let { "${if (it > 0) "+" else ""}${"%.1f".format(it)}% per hour" } ?: "measuring"
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
@@ -60,8 +62,8 @@ fun HomePage(root: Boolean?) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    GradText("Ashutool", GTeal, 34.sp)
-                    Text("Root toolkit for your ROM", color = TextLo, fontSize = 13.sp)
+                    GradText("Ashutool", GTeal, 32.sp)
+                    Text("Your phone right now", color = TextLo, fontSize = 13.sp)
                 }
                 RootChip(root)
             }
@@ -79,53 +81,94 @@ fun HomePage(root: Boolean?) {
                 }
             }
         }
-        item { Box(Modifier.enter(1)) { QuickTogglesCard() } }
-        item { IslandHomeCard() }
+        // The one big card: the battery, with what it is doing
         item {
-            Glass(Modifier.enter(2)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Gauge(s.cpu / 100f, "${s.cpu.toInt()}%", "CPU", Icons.Outlined.Memory, GTeal)
-                    Gauge(s.ramPct / 100f, "${s.ramPct.toInt()}%", "RAM", Icons.Outlined.DeveloperBoard, GViolet)
-                    Gauge(
-                        b.level / 100f, "${b.level}%", "Battery",
-                        if (b.charging) Icons.Outlined.BatteryChargingFull else Icons.Outlined.BatteryFull,
-                        if (b.level <= 15 && !b.charging) GRed else GGreen
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MiniStat("CPU temp", "${s.cpuTemp.toInt()}\u00B0C")
-                    MiniStat("Battery", "${"%.1f".format(b.tempC)}\u00B0C")
-                    MiniStat("Draw", "${b.ma} mA")
-                    MiniStat("Rate", s.ratePh?.let { "${if (it > 0) "+" else ""}${"%.1f".format(it)}%/h" } ?: "...")
-                }
-            }
-        }
-        item {
-            Glass(Modifier.enter(2)) {
-                SectionTitle("CPU load", "recent")
-                LineChart(s.cpuHist, GTeal, maxV = 100f)
-            }
-        }
-        item {
-            Glass(Modifier.enter(3), onClick = doBoost) {
+            Glass(Modifier.enter(0), radius = 28.dp, pad = 18.dp, onClick = { go(P.BATTERY) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    GradIcon(Icons.Outlined.Bolt, GFire, 48.dp)
+                    Gauge(
+                        b.level / 100f, "${b.level}%", if (b.charging) "Charging" else "Battery",
+                        if (b.charging) Icons.Outlined.BatteryChargingFull else Icons.Outlined.BatteryFull,
+                        if (b.level <= 15 && !b.charging) GRed else GGreen, dia = 118.dp
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        HomeFact("Current", "${b.ma} mA")
+                        HomeFact("Temperature", "${"%.1f".format(b.tempC)}\u00B0C")
+                        HomeFact(if (b.charging) "Charge rate" else "Use rate", rate)
+                    }
+                }
+            }
+        }
+        // Three small numbers
+        item {
+            Row(Modifier.fillMaxWidth().enter(1), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                HomeNumber("CPU", "${s.cpu.toInt()}%", Icons.Outlined.Memory, GTeal, Modifier.weight(1f)) { go(P.CPU) }
+                HomeNumber("RAM", "${s.ramPct.toInt()}%", Icons.Outlined.DeveloperBoard, GViolet, Modifier.weight(1f)) { go(P.MEMORY) }
+                HomeNumber("Heat", "${s.cpuTemp.toInt()}\u00B0C", Icons.Outlined.Thermostat, tempGrad(s.cpuTemp), Modifier.weight(1f)) { go(P.THERMAL) }
+            }
+        }
+        item {
+            Glass(Modifier.enter(2), onClick = doBoost) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GradIcon(Icons.Outlined.Bolt, GFire, 46.dp)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(if (boosting) "Boosting" else "One-tap boost", color = TextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("Stops third-party apps, trims caches, frees RAM. Launcher and keyboard are skipped.", color = TextLo, fontSize = 12.sp)
+                        Text(if (boosting) "Boosting..." else "Boost", color = TextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("Closes other apps and frees memory.", color = TextLo, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        item { SectionTitle("Open") }
+        val doors = listOf(
+            HomeDoor(Icons.Outlined.SportsEsports, GFire, "Games", "Game panel and tools", P.GAMES),
+            HomeDoor(Icons.Outlined.BlurOn, GViolet, "Dynamic Island", "Look and settings", P.ISLAND),
+            HomeDoor(Icons.Outlined.BatteryChargingFull, GGreen, "Battery", "Health and charging", P.BATTERY),
+            HomeDoor(Icons.Outlined.Thermostat, GRed, "Heat", "Temperatures", P.THERMAL),
+            HomeDoor(Icons.Outlined.Apps, GTeal, "Apps", "Manage your apps", P.MANAGER),
+            HomeDoor(Icons.Outlined.Settings, GBlue, "Settings", "Look, alerts and more", P.SETTINGS)
+        )
+        doors.chunked(2).forEach { pair ->
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { d ->
+                        Glass(Modifier.weight(1f), radius = 24.dp, pad = 14.dp, onClick = { go(d.page) }) {
+                            GradIcon(d.icon, d.grad, 38.dp)
+                            Spacer(Modifier.height(10.dp))
+                            Text(d.title, color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            Text(d.sub, color = TextLo, fontSize = 11.sp, maxLines = 1)
+                        }
                     }
                 }
             }
         }
         item {
-            Text(
-                "Swipe the bar below to open more tools.",
-                color = TextLo, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
-            )
+            Glass(Modifier.enter(3)) {
+                SectionTitle("CPU load", "recent")
+                LineChart(s.cpuHist, GTeal, maxV = 100f)
+            }
         }
         item { CreditFooter() }
+    }
+}
+
+private class HomeDoor(val icon: ImageVector, val grad: Grad, val title: String, val sub: String, val page: P)
+
+@Composable
+private fun HomeFact(label: String, value: String) {
+    Column {
+        Text(value, color = TextHi, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, color = TextLo, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun HomeNumber(label: String, value: String, icon: ImageVector, grad: Grad, modifier: Modifier, onClick: () -> Unit) {
+    Glass(modifier, radius = 22.dp, pad = 12.dp, onClick = onClick) {
+        GradIcon(icon, grad, 30.dp)
+        Spacer(Modifier.height(8.dp))
+        Text(value, color = TextHi, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(label, color = TextLo, fontSize = 11.sp)
     }
 }
 

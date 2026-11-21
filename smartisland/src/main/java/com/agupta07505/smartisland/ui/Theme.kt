@@ -150,6 +150,12 @@ fun SmartIslandTheme(
     accentColor: Long = SmartIslandSettings.Default.accentColor,
     content: @Composable () -> Unit
 ) {
+    // Modified for Ashutool (2026): when the host app handed over a look, it paints the screens, see HostTheme.kt.
+    val hostLook = HostTheme.look
+    if (hostLook != null) {
+        HostThemed(hostLook, content)
+        return
+    }
     val context = LocalContext.current
     val useDark = when (themeMode) {
         "light" -> false

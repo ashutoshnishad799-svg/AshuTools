@@ -18,5 +18,6 @@
 -keep class com.ashu.ashutool.NetModeMain { public static void main(java.lang.String[]); }
 
 
-# Smart Island runs with R8 optimization off. A library may not set this global option, so it is set here.
+# Smart Island (module :smartisland) runs with R8 optimization off, as in its own app. A library may not set this global option
+# in its consumer rules, so it is set here. Shrinking and renaming stay on.
 -dontoptimize

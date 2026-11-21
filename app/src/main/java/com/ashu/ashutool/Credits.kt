@@ -174,6 +174,7 @@ class AshuApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        Palette.load(this)
         com.agupta07505.smartisland.AshutoolBridge.onAppCreate(this)
     }
 

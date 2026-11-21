@@ -387,6 +387,20 @@ fun SmartIslandHomeScreen(
             transitionDirection = 1
             activeDetailSection = FeatureDetailSection.AppShortcuts
             onOpenSectionHandled()
+        } else if (openSection != null && openSection.startsWith("ashu:")) {
+            // Modified for Ashutool (2026): the Island tab of Ashutool opens a tab or a page by name, "ashu:Position", "ashu:ColorStudio".
+            val key = openSection.removePrefix("ashu:")
+            val tab = StudioTab.values().firstOrNull { it.name == key }
+            val detail = FeatureDetailSection.values().firstOrNull { it.name == key }
+            if (detail != null) {
+                transitionDirection = 1
+                activeDetailSection = detail
+            } else if (tab != null) {
+                transitionDirection = 1
+                activeDetailSection = null
+                selectedTab = tab
+            }
+            onOpenSectionHandled()
         }
     }
 
@@ -660,7 +674,7 @@ private fun StudioTopHeader(
             if (appIcon != null) {
                 Image(
                     bitmap = appIcon,
-                    contentDescription = "Smart Island Logo",
+                    contentDescription = "Dynamic Island",
                     modifier = Modifier
                         .size(42.dp)
                         .clip(RoundedCornerShape(12.dp))
@@ -922,23 +936,7 @@ private fun SettingsOverviewSection(
                 onClick = { onNavigateTo(FeatureDetailSection.BackupRestore) }
             )
 
-            FeatureStudioNavigationCard(
-                title = stringResource(R.string.card_updates_downloads_title),
-                subtitle = "Check GitHub releases and download updates",
-                icon = Icons.Rounded.Download,
-                iconColor = BadgeTeal,
-                onClick = { onNavigateTo(FeatureDetailSection.UpdatesAndDownloads) }
-            )
-
-            FeatureStudioNavigationCard(
-                title = stringResource(R.string.card_support_requests_title),
-                subtitle = "Report issues, feature requests & community",
-                icon = Icons.Rounded.People,
-                iconColor = BadgePink,
-                onClick = { onNavigateTo(FeatureDetailSection.SupportCommunity) }
-            )
-
-            FeatureStudioNavigationCard(
+                                    FeatureStudioNavigationCard(
                 title = stringResource(R.string.card_developer_options_title),
                 subtitle = "Diagnostics, log recording & developer options",
                 icon = Icons.Rounded.Code,
@@ -948,14 +946,7 @@ private fun SettingsOverviewSection(
                 onClick = { onNavigateTo(FeatureDetailSection.DeveloperOptions) }
             )
 
-            FeatureStudioNavigationCard(
-                title = stringResource(R.string.card_about_title),
-                subtitle = stringResource(R.string.card_about_subtitle),
-                icon = Icons.Rounded.Info,
-                iconColor = BadgeSlate,
-                onClick = { onNavigateTo(FeatureDetailSection.About) }
-            )
-        }
+                    }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1178,7 +1169,8 @@ private fun StudioBottomNavigationBar(
     onTabSelected: (StudioTab) -> Unit
 ) {
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
+        // Modified for Ashutool (2026): over the host's background the bar needs a near solid colour to read well.
+        containerColor = if (com.agupta07505.smartisland.ui.HostTheme.look != null) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface,
         tonalElevation = 6.dp
     ) {
         NavigationBarItem(
@@ -1492,7 +1484,7 @@ private fun WelcomeDialog(
                 if (appIcon != null) {
                     Image(
                         bitmap = appIcon,
-                        contentDescription = "Smart Island Logo",
+                        contentDescription = "Dynamic Island",
                         modifier = Modifier
                             .size(68.dp)
                             .clip(RoundedCornerShape(18.dp))
@@ -1507,7 +1499,7 @@ private fun WelcomeDialog(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("SI", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("DI", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                 }
 
@@ -1528,61 +1520,6 @@ private fun WelcomeDialog(
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
-
-                Button(
-                    onClick = {
-                        runCatchingLogged("WelcomeDialog", "Failed to open GitHub link") {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/agupta07505/SmartIsland")))
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    )
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSecondary
-                        )
-                        Text(
-                            stringResource(R.string.star_on_github),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondary
-                        )
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        runCatchingLogged("WelcomeDialog", "Failed to open Telegram link") {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://telegram.me/SmartIslandApp")))
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.People,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            stringResource(R.string.join_telegram),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
 
                 ElevatedButton(
                     onClick = onDismiss,

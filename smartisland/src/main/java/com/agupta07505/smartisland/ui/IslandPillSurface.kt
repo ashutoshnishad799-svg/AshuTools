@@ -184,6 +184,8 @@ internal fun Modifier.islandPillSurface(
             // swap are one card apart, so there is no strip of bare shell to cover: the shell keeps its own opacity.
             alpha = { shellOpacity() * layout.singleSurfaceAlpha }
         )
+        // Modified for Ashutool (2026): a light coloured edge, chosen in Ashutool, see HostEdge.kt.
+        .hostEdge { islandShellShape(layout.safeRadius.toPx(), squareTop) }
         .lockCueOutline(
             shape = { islandShellShape(layout.safeRadius.toPx(), squareTop) },
             cue = { ui.lockCue.value },

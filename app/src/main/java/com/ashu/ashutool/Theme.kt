@@ -136,8 +136,8 @@ object Palette {
     const val PURE_BLACK = 1
     const val PURE_WHITE = 2
 
-    /** Following the system: Nebula in dark mode and Nebula light in light mode. Pure black and pure white stay in the list to pick. */
-    val cur: Pal get() = if (auto) themes[if (systemDark) NEBULA else NEBULA_LIGHT] else themes[mode.coerceIn(0, themes.size - 1)]
+    /** Following the system: pure black in dark mode and pure white in light mode. The other themes stay in the list to pick. */
+    val cur: Pal get() = if (auto) themes[if (systemDark) PURE_BLACK else PURE_WHITE] else themes[mode.coerceIn(0, themes.size - 1)]
 
     fun load(ctx: Context) {
         mode = LockStore.int(ctx, "theme", PURE_BLACK).coerceIn(0, themes.size - 1)
@@ -146,6 +146,8 @@ object Palette {
         animated = LockStore.bool(ctx, "anim_bg", true)
         realBlur = LockStore.bool(ctx, "glass_blur", false)
         glass = LockStore.int(ctx, "glass_x", 100).coerceIn(60, 160) / 100f
+        // The Dynamic Island screens (Smart Island) are painted with this look too
+        IslandSkin.refresh(ctx)
     }
 }
 
@@ -213,5 +215,6 @@ fun AshuTheme(content: @Composable () -> Unit) {
         primary = Accent, onPrimary = Color.White, secondary = Accent2, background = Color.Transparent, onBackground = TextHi,
         surface = DialogBg, onSurface = TextHi, surfaceVariant = Surf2, onSurfaceVariant = TextLo, error = Danger, outline = Line
     )
+    SideEffect { IslandSkin.push() }
     MaterialTheme(colorScheme = scheme, content = content)
 }

@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.3.0 - a cleaner Ashutool
+- **Home** was redesigned: one big battery card, three numbers (CPU, RAM, heat), a Boost button and a grid of doors to the main places. The quick
+  controls card and the island card are gone from it.
+- **Easier to use:** the bottom bar has five groups instead of six (Home, Island, Games, Phone, More). Battery, Power and the monitors are together in Phone.
+- **Pure black and pure white:** following the system now gives pure black in dark mode and pure white in light mode.
+- **Notification:** opened up, the live notification shows two clean columns (a small name over a bigger number) instead of lines of text.
+- **Dynamic Island:** the screens of the island have no outside names, version, updates or support pages any more. The credit for the Dynamic Island
+  is in the README and in Ashutool's About page.
+- **Dynamic Island edge:** a light coloured rim on the island (Off, Accent, Aurora, Rainbow, Flow) with a strength slider, with a live preview in the Island tab.
+- The Island tab got simpler: preview, power, status, the edge, eight doors and a few extras.
+
+## 3.2.0 - the island screens in Ashutool style
+- The Smart Island screens now wear the look of Ashutool: your theme colours, the frosted glass and the drifting glow behind the screens,
+  live with your theme and light or dark mode. Smart Island's own settings and content are unchanged. A switch in the Island tab gives
+  Smart Island's own theme back.
+- New Island tab: a live picture of the island in your theme, the status of the service, notification access and overlay (tap a red one
+  to fix it with root), the island power switch, and twelve doors that open the matching Smart Island page directly (Studio, Position,
+  Demo, Colours, Idle widgets, Gestures, Notifications, Shortcuts, Timing, Permissions, Backup, All settings).
+- Setup through root now also switches the island's master switch on, which Smart Island keeps off until you switch it on.
+- Ashutool extras: "Hide the island in games" (switched off while a game runs, back on after, unless you had turned it off yourself)
+  and "Match the island to Ashutool" (the island's music wave, notification dot and tint of the open cards take your accent).
+- Changes inside the Smart Island module are listed in smartisland/UPSTREAM.md. The island itself is not changed.
+
 ## 3.1.0 - the full Smart Island inside
 Made by Ashutosh Nishad, Telegram @ashutosh_07x. Dynamic Island: Smart Island 7.6.0 by Animesh Gupta (agupta07505),
 https://github.com/agupta07505/SmartIsland, GNU GPL v3.0.

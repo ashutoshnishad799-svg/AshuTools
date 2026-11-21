@@ -692,6 +692,40 @@ private fun batteryExtras(ctx: Context, s: Snap): List<String> {
     return out
 }
 
+/**
+ * The numbers of the open live notification as pairs of a name and a value, shown in two columns. At most eight, in the
+ * order that matters most: processor, memory, battery, power, drain, network. Empty when the notification has no numbers.
+ */
+fun statsGrid(ctx: Context, s: Snap): List<Pair<String, String>> {
+    if (Guard.safe || !LockStore.bool(ctx, "n_on", true)) return emptyList()
+    val out = ArrayList<Pair<String, String>>()
+    val b = s.batt
+    if (LockStore.bool(ctx, "n_cpu", true)) out += "CPU" to "${s.cpu.toInt()}%"
+    if (LockStore.bool(ctx, "n_temp", true)) out += "CPU heat" to "${s.cpuTemp.toInt()}\u00B0C"
+    if (LockStore.bool(ctx, "n_ram", true)) out += "RAM" to "${s.ramPct.toInt()}%"
+    if (LockStore.bool(ctx, "n_batt", true)) {
+        out += "Battery" to "${b.level}%  ${"%.1f".format(b.tempC)}\u00B0C"
+        val watt = if (LockStore.bool(ctx, "n_watt", true) && b.mv > 0) "  ${"%.1f".format(Math.abs(b.ma) * b.mv / 1_000_000f)} W" else ""
+        out += "Power" to "${b.ma} mA$watt"
+    }
+    if (LockStore.bool(ctx, "n_drain", true)) {
+        val r = s.ratePh
+        out += "Drain" to when {
+            r == null -> "measuring"
+            r < 0 -> "-${"%.1f".format(-r)}%/h"
+            else -> "+${"%.1f".format(r)}%/h"
+        }
+    }
+    if (LockStore.bool(ctx, "n_net", true)) {
+        out += "Download" to fmtSpeed(s.netDown)
+        out += "Upload" to fmtSpeed(s.netUp)
+    }
+    if (LockStore.bool(ctx, "n_freq", true)) out += "Core max" to "${(s.cores.maxOfOrNull { it.khz } ?: 0) / 1000} MHz"
+    if (LockStore.bool(ctx, "n_sleep", false)) out += "Deep sleep" to "${s.deepSleep}%"
+    if (LockStore.bool(ctx, "n_storage", false)) out += "Free storage" to "${"%.1f".format(s.freeGb)} GB"
+    return out.take(8)
+}
+
 /** Title and body for the live notification. Used by the service and by the preview card. */
 fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
     val top = mutableListOf<String>()

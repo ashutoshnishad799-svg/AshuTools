@@ -399,7 +399,7 @@ fun DeveloperOptionsSection(
                 )
                 DiagnosticItem(
                     label = "App Build",
-                    value = "v${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})"
+                    value = BuildConfig.BUILD_TYPE
                 )
                 DiagnosticItem(
                     label = "OEM Rules",

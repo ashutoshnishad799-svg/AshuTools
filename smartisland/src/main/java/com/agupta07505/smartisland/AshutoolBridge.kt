@@ -20,13 +20,36 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.agupta07505.smartisland.data.SmartIslandSettingsRepository
+import com.agupta07505.smartisland.di.AshutoolEntryPoint
 import com.agupta07505.smartisland.service.SmartIslandNotificationListenerService
 import com.agupta07505.smartisland.service.SmartIslandOverlayService
 import com.agupta07505.smartisland.util.AppLogRecorder
 import com.agupta07505.smartisland.util.ShizukuManager
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /** The only door Ashutool uses into the Smart Island module. */
 object AshutoolBridge {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** True when the master switch of the island (the "Enabled" setting of Smart Island) is on. Compose state: Ashutool's screens follow it. */
+    var islandEnabled by mutableStateOf(false)
+        private set
+
+    private fun repo(ctx: Context): SmartIslandSettingsRepository =
+        EntryPointAccessors.fromApplication(ctx.applicationContext, AshutoolEntryPoint::class.java).settingsRepository()
+
     /** Call once from Application.onCreate(), after the crash log of Ashutool is installed. */
     fun onAppCreate(app: Application) {
         runCatching { AppLogRecorder.restore(app) }
@@ -38,6 +61,39 @@ object AshutoolBridge {
             }
         }
         bypassHiddenApis()
+        // Keeps islandEnabled up to date with the setting, whoever changes it (Smart Island's own screen, or Ashutool)
+        scope.launch { runCatching { repo(app).settings.map { it.enabled }.distinctUntilChanged().collect { islandEnabled = it } } }
+    }
+
+    /** Blocking, call off the main thread. Switches the island on or off with the same switch as the Smart Island screen. */
+    fun setIslandEnabled(ctx: Context, on: Boolean) {
+        runBlocking { runCatching { repo(ctx).setEnabled(on) } }
+    }
+
+    /** The light edge of the island: [style] 0 off, 1 accent, 2 aurora, 3 rainbow, 4 flow; [strength] 0 to 100. */
+    fun setEdge(style: Int, strength: Int) {
+        com.agupta07505.smartisland.ui.HostEdge.configure(style, strength)
+    }
+
+    /** Blocking, call off the main thread. The value stored right now. */
+    fun readIslandEnabled(ctx: Context): Boolean =
+        runBlocking { runCatching { repo(ctx).settings.first().enabled }.getOrDefault(false) }
+
+    /**
+     * Blocking, call off the main thread. Makes the island's own accent colours match the host: the music wave, the
+     * notification dot and the tint of the open cards. [rgb] is 0xRRGGBB.
+     */
+    fun syncAccent(ctx: Context, rgb: Int) {
+        val argb = 0xFF000000L or (rgb.toLong() and 0xFFFFFFL)
+        runBlocking {
+            runCatching {
+                val r = repo(ctx)
+                r.setMusicVisualizerColor(argb)
+                r.setNotificationDotColor(argb)
+                r.setExpandedGradientColor(argb)
+                r.setExpandedGradientEnabled(true)
+            }
+        }
     }
 
     private fun bypassHiddenApis() {

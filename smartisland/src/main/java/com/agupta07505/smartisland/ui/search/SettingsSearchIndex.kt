@@ -506,26 +506,6 @@ internal fun buildSettingsSearchIndex(str: (Int) -> String): List<SettingsSearch
         listOf("log", "debug", "bug", "report", "export", "record", "crash", "developer", "trace")
     )
 
-    add(
-        "about.screen", aboutScreen, detail(FeatureDetailSection.About), aboutScreen, Icons.Rounded.Info,
-        str(R.string.card_about_subtitle),
-        listOf("creator", "author", "original", "github", "link", "credits", "licence", "license", "gpl", "version", "animesh gupta")
-    )
-
-    val updatesScreen = str(R.string.card_updates_downloads_title)
-    add(
-        "updates.screen", updatesScreen, detail(FeatureDetailSection.UpdatesAndDownloads), updatesScreen, Icons.Rounded.Download,
-        str(R.string.card_updates_downloads_desc),
-        listOf("update", "download", "version", "github", "release", "apk", "check", "changelog")
-    )
-
-    val supportScreen = str(R.string.card_support_requests_title)
-    add(
-        "support.screen", supportScreen, detail(FeatureDetailSection.SupportCommunity), supportScreen, Icons.Rounded.People,
-        str(R.string.card_support_requests_desc),
-        listOf("support", "telegram", "community", "bug", "issue", "feedback", "feature request", "contact")
-    )
-
     val devScreen = str(R.string.card_developer_options_title)
     add(
         "dev.screen", devScreen, detail(FeatureDetailSection.DeveloperOptions), devScreen, Icons.Rounded.Code,

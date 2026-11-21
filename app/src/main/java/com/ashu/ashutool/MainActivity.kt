@@ -116,10 +116,9 @@ enum class P(val label: String, val icon: ImageVector) {
  */
 enum class G(val label: String, val icon: ImageVector, val pages: List<P>) {
     HOME("Home", Icons.Outlined.Home, listOf(P.HOME)),
-    MONITOR("Monitor", Icons.Outlined.Memory, listOf(P.CPU, P.MEMORY, P.THERMAL, P.NETWORK, P.STORAGE, P.DEVICE)),
     ISLAND("Island", Icons.Outlined.BlurOn, listOf(P.ISLAND, P.SOUND)),
     GAMES("Games", Icons.Outlined.SportsEsports, listOf(P.GAMES, P.CALLS, P.USAGE)),
-    POWER("Power", Icons.Outlined.BatteryChargingFull, listOf(P.BATTERY, P.POWER)),
+    PHONE("Phone", Icons.Outlined.Memory, listOf(P.BATTERY, P.POWER, P.CPU, P.MEMORY, P.THERMAL, P.NETWORK, P.STORAGE, P.DEVICE)),
     MORE("More", Icons.Outlined.Apps, listOf(P.MANAGER, P.PROCESSES, P.LOCK, P.HIDE, P.NOTIFY, P.DISPLAY, P.SETTINGS));
 
     companion object {
@@ -176,7 +175,7 @@ fun AshuApp(start: P) {
                             (slideOutHorizontally(tween(260)) { -it * dir / 4 } + fadeOut(tween(180)))
                     },
                     label = "tabs"
-                ) { p -> PageHost(p, root) }
+                ) { p -> PageHost(p, root) { page = it } }
             }
             GlassNavBar(group) { g -> page = lastOf[g] ?: g.pages.first() }
         }
@@ -184,9 +183,9 @@ fun AshuApp(start: P) {
 }
 
 @Composable
-private fun PageHost(p: P, root: Boolean?) {
+private fun PageHost(p: P, root: Boolean?, go: (P) -> Unit) {
     when (p) {
-        P.HOME -> HomePage(root)
+        P.HOME -> HomePage(root, go)
         P.GAMES -> GamesPage()
         P.CALLS -> CallsPage()
         P.CPU -> CpuPage()

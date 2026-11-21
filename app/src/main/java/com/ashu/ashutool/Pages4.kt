@@ -569,7 +569,7 @@ private fun LookSub(back: () -> Unit) {
     fun pick(i: Int) { Palette.auto = false; Palette.mode = i; LockStore.setBool(ctx, "theme_auto", false); LockStore.setInt(ctx, "theme", i) }
     Page("Appearance", Palette.cur.name, GViolet, Icons.Outlined.ColorLens, onBack = back) {
         item {
-            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Nebula in dark mode, Nebula light in light mode", Palette.auto) {
+            SwitchRow(Icons.Outlined.ColorLens, GViolet, "Follow system", "Pure black in dark mode, pure white in light mode", Palette.auto) {
                 Palette.auto = it
                 LockStore.setBool(ctx, "theme_auto", it)
             }

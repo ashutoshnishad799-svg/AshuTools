@@ -26,6 +26,8 @@ import android.os.Looper
 import android.os.SystemClock
 import android.telephony.TelephonyManager
 import androidx.compose.runtime.snapshotFlow
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -161,15 +163,34 @@ class MonitorService : Service() {
     private fun build(s: Snap): Notification {
         val (title, body) = statsLines(this, s)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, CHANNEL)
+        val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_bolt)
             .setContentTitle(title)
             .setContentText(body.substringBefore('\n'))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(open)
             .setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        val cells = statsGrid(this, s)
+        if (cells.isEmpty()) {
+            b.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        } else {
+            // Opened up: two clean columns instead of lines of text
+            val rv = RemoteViews(packageName, R.layout.notif_grid)
+            val cell = intArrayOf(R.id.c1, R.id.c2, R.id.c3, R.id.c4, R.id.c5, R.id.c6, R.id.c7, R.id.c8)
+            val label = intArrayOf(R.id.l1, R.id.l2, R.id.l3, R.id.l4, R.id.l5, R.id.l6, R.id.l7, R.id.l8)
+            val value = intArrayOf(R.id.v1, R.id.v2, R.id.v3, R.id.v4, R.id.v5, R.id.v6, R.id.v7, R.id.v8)
+            val rows = intArrayOf(R.id.row1, R.id.row2, R.id.row3, R.id.row4)
+            for (i in 0 until 8) {
+                if (i < cells.size) {
+                    rv.setTextViewText(label[i], cells[i].first)
+                    rv.setTextViewText(value[i], cells[i].second)
+                    rv.setViewVisibility(cell[i], View.VISIBLE)
+                } else rv.setViewVisibility(cell[i], View.GONE)
+            }
+            for (r in 0 until 4) rv.setViewVisibility(rows[r], if (r * 2 < cells.size) View.VISIBLE else View.GONE)
+            b.setStyle(NotificationCompat.DecoratedCustomViewStyle()).setCustomBigContentView(rv)
+        }
+        return b.build()
     }
 
     /** At most one update every five seconds, and once a minute while the screen is off. */
@@ -310,6 +331,7 @@ class MonitorService : Service() {
     }
 
     private fun enterGame(pkg: String) {
+        IslandTwists.onGame(this, true)
         if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(pkg) else sidebar?.hide()
         if (LockStore.bool(this, "g_auto", false) && GameMode.active != pkg) {
             scope?.launch(Dispatchers.IO) { GameMode.start(this@MonitorService, pkg) }
@@ -317,6 +339,7 @@ class MonitorService : Service() {
     }
 
     private fun leaveGame() {
+        IslandTwists.onGame(this, false)
         sidebar?.hide()
         if (GameMode.active != null) handler.postDelayed({
             if (Fg.game == null && GameMode.active != null) scope?.launch(Dispatchers.IO) { GameMode.stop(this@MonitorService) }

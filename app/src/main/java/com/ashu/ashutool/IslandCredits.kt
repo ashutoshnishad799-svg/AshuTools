@@ -55,14 +55,14 @@ fun IslandCreditCard() {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Credit", color = TextLo, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                Text("${IslandCredits.NAME} by ${IslandCredits.AUTHOR}", color = TextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Dynamic Island", color = TextHi, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text("@${IslandCredits.HANDLE}  \u00B7  ${IslandCredits.LICENSE}", color = TextLo, fontSize = 12.sp)
             }
         }
         Text(
-            "The Dynamic Island in Ashutool is ${IslandCredits.NAME}, made by ${IslandCredits.AUTHOR} (${IslandCredits.HANDLE}) and shared " +
-                "under the ${IslandCredits.LICENSE}. Its code is included here with its own notices and a list of the few changes, " +
-                "see smartisland/UPSTREAM.md in the source. Thank you, and please star the original.",
+            "The Dynamic Island is built on ${IslandCredits.NAME} by ${IslandCredits.AUTHOR} (${IslandCredits.HANDLE}), shared under the " +
+                "${IslandCredits.LICENSE}. Copyright \u00A9 2026 ${IslandCredits.AUTHOR}. It comes with no warranty. You may share it under " +
+                "the same licence, a copy is in the source of Ashutool. Thank you.",
             color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 10.dp)
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
