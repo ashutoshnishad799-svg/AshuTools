@@ -17,10 +17,10 @@ thrown away in one go. Smart Island's code stays in place until the file that re
    is a thank you to Smart Island and its author.
 
 ## The size of it
-329 files, 75,293 lines. Done so far: 15 files.
+329 files, 75,293 lines. Done so far: 31 files.
 | Stage | Files | Lines | Done |
 |---|---|---|---|
-| Stage 1 - small pure logic (no dependencies) | 74 | 5,313 | 15 |
+| Stage 1 - small pure logic (no dependencies) | 74 | 5,313 | 31 |
 | Stage 2 - models, utilities and data helpers | 125 | 20,064 | 0 |
 | Stage 3 - services, data layer, island drawing | 75 | 27,969 | 0 |
 | Stage 4 - island cards and the settings screens | 55 | 21,947 | 0 |
@@ -31,16 +31,16 @@ thrown away in one go. Smart Island's code stays in place until the file that re
 
 *dependency level 0*
 
-- [ ] `data/NotificationHistoryEntry.kt` (25 lines)
+- [x] `data/NotificationHistoryEntry.kt` (25 lines)
 - [ ] `data/PinnedApps.kt` (147 lines)
 - [x] `model/CalendarRules.kt` (31 lines)
 - [ ] `model/CardDepth.kt` (103 lines)
 - [ ] `model/CollapseMotion.kt` (66 lines)
 - [ ] `model/DndMode.kt` (108 lines)
 - [x] `model/ExpandMotion.kt` (30 lines)
-- [ ] `model/ExpandOrigin.kt` (37 lines)
-- [ ] `model/FloatingWindowMode.kt` (35 lines)
-- [ ] `model/FontMix.kt` (44 lines)
+- [x] `model/ExpandOrigin.kt` (37 lines)
+- [x] `model/FloatingWindowMode.kt` (35 lines)
+- [x] `model/FontMix.kt` (44 lines)
 - [ ] `model/HourChime.kt` (55 lines)
 - [ ] `model/IslandExemption.kt` (49 lines)
 - [ ] `model/LandscapePillExit.kt` (74 lines)
@@ -48,12 +48,12 @@ thrown away in one go. Smart Island's code stays in place until the file that re
 - [ ] `model/LedTick.kt` (119 lines)
 - [ ] `model/NetUsage.kt` (69 lines)
 - [x] `model/NotificationMedia.kt` (21 lines)
-- [ ] `model/PickerSwap.kt` (47 lines)
+- [x] `model/PickerSwap.kt` (47 lines)
 - [x] `model/PillEnterStep.kt` (33 lines)
 - [ ] `model/PillPresence.kt` (119 lines)
 - [x] `model/PillPulse.kt` (15 lines)
 - [ ] `model/PortraitPillTap.kt` (122 lines)
-- [ ] `model/ReplyDrafts.kt` (40 lines)
+- [x] `model/ReplyDrafts.kt` (40 lines)
 - [x] `model/RotationVeil.kt` (33 lines)
 - [ ] `model/ShellStateGuard.kt` (60 lines)
 - [ ] `model/SplitMotion.kt` (94 lines)
@@ -79,32 +79,32 @@ thrown away in one go. Smart Island's code stays in place until the file that re
 - [ ] `ui/search/SettingsSearch.kt` (95 lines)
 - [ ] `ui/sections/EventGrid.kt` (21 lines)
 - [ ] `util/AppPackageCatalog.kt` (144 lines)
-- [ ] `util/AxisLock.kt` (36 lines)
+- [x] `util/AxisLock.kt` (36 lines)
 - [x] `util/ButtonPress.kt` (30 lines)
-- [ ] `util/GestureSensitivity.kt` (43 lines)
-- [ ] `util/IslandTimings.kt` (48 lines)
+- [x] `util/GestureSensitivity.kt` (43 lines)
+- [x] `util/IslandTimings.kt` (48 lines)
 - [ ] `util/LabColor.kt` (99 lines)
-- [ ] `util/MediaTransportDetector.kt` (28 lines)
+- [x] `util/MediaTransportDetector.kt` (28 lines)
 - [x] `util/MergeStyle.kt` (25 lines)
 - [ ] `util/MiuiAppLockLog.kt` (58 lines)
 - [ ] `util/NavigationLocale.kt` (194 lines)
 - [x] `util/PickerRequest.kt` (17 lines)
-- [ ] `util/PictureFolderPick.kt` (38 lines)
-- [ ] `util/PictureMessageText.kt` (47 lines)
+- [x] `util/PictureFolderPick.kt` (38 lines)
+- [x] `util/PictureMessageText.kt` (47 lines)
 - [x] `util/PictureRetryPlan.kt` (27 lines)
 - [ ] `util/ReaderScrollGuard.kt` (50 lines)
 - [x] `util/SendAttempts.kt` (29 lines)
 - [ ] `util/ShadeDetector.kt` (62 lines)
-- [ ] `util/SilentActionGuard.kt` (47 lines)
-- [ ] `util/StalePostGuard.kt` (48 lines)
+- [x] `util/SilentActionGuard.kt` (47 lines)
+- [x] `util/StalePostGuard.kt` (48 lines)
 - [ ] `util/SwipeDownPull.kt` (80 lines)
 - [x] `util/SwipeFade.kt` (27 lines)
-- [ ] `util/SwipeFeel.kt` (37 lines)
+- [x] `util/SwipeFeel.kt` (37 lines)
 - [ ] `util/SwipeSideways.kt` (65 lines)
 - [ ] `util/TapGuard.kt` (50 lines)
 - [x] `util/TimeUtils.kt` (16 lines)
 - [ ] `util/TimerClock.kt` (50 lines)
-- [ ] `util/TimerFreeze.kt` (39 lines)
+- [x] `util/TimerFreeze.kt` (39 lines)
 
 ## Stage 2 - models, utilities and data helpers
 
@@ -460,6 +460,8 @@ thrown away in one go. Smart Island's code stays in place until the file that re
 ## Batches done
 
 - Batch 1: 15 small files of Stage 1 (model and util), checked against the originals for identical public names and values.
+
+- Batch 2: 16 more files of Stage 1. Checked for identical public names, numbers and texts, and the logic of `TimerFreeze`, `GestureSensitivity` and `PictureFolderPick` was tested against the original on hundreds of thousands of random inputs: no difference.
 
 ## Thanks
 
