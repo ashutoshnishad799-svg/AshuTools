@@ -3,6 +3,8 @@
  * © Animesh Gupta — github.com/agupta07505
  * Licensed under the GNU GPL v3 License
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
+ * Rewritten for Ashutool (2026) with the same behaviour. See smartisland/REWRITE.md.
  */
 
 package com.agupta07505.smartisland.util
@@ -10,18 +12,20 @@ package com.agupta07505.smartisland.util
 import kotlin.math.abs
 
 /**
- * How see-through a swiped card is, as a function of how far it sits from the middle: the further the card is pushed
- * the fainter it gets (the look of Android's swipe-to-dismiss).
+ * Fades a swiped card: the further it is pushed from the middle the fainter it gets, like swipe to dismiss in Android.
  */
 object SwipeFade {
-    /** The lowest opacity the expanded card reaches at (or past) its slide limit. */
+    /** The faintest the expanded card gets, at its slide limit or beyond. */
     const val CARD_MIN_ALPHA = 0.3f
 
-    /** 1 at the middle, [minAlpha] at [maxPx] or further, smoothly in between (ease in and out). Odd in [offsetPx]. */
+    /**
+     * Opacity for a card [offsetPx] away from the middle: 1 in the middle, [minAlpha] at [maxPx] or more, and a smooth
+     * ease in and out between. The sign of the offset does not matter.
+     */
     fun alpha(offsetPx: Float, maxPx: Float, minAlpha: Float): Float {
         if (maxPx <= 0f) return 1f
-        val s = (abs(offsetPx) / maxPx).coerceIn(0f, 1f)
-        val eased = s * s * (3f - 2f * s)
-        return 1f - (1f - minAlpha) * eased
+        val t = (abs(offsetPx) / maxPx).coerceIn(0f, 1f)
+        val smooth = t * t * (3f - 2f * t)
+        return 1f - (1f - minAlpha) * smooth
     }
 }

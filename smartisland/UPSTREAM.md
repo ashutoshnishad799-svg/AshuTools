@@ -41,3 +41,7 @@ files that read it), because Smart Island ships an English translation of it and
 
 Note: the "Updates and downloads" section inside the Smart Island settings screen lists releases of Smart Island itself, not of Ashutool.
 Ashutool updates come from the Ashutool repository.
+
+## Rewriting
+The island is being rewritten file by file into Ashutool's own code with the same behaviour. The plan, the rules and the list of what is
+done are in `REWRITE.md`. Rewritten files keep the notice of Smart Island at the top, with a line saying they were rewritten for Ashutool.

@@ -3,22 +3,31 @@
  * © Animesh Gupta — github.com/agupta07505
  * Licensed under the GNU GPL v3 License
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
+ * Rewritten for Ashutool (2026) with the same behaviour. See smartisland/REWRITE.md.
  */
 
 package com.agupta07505.smartisland.model
 
-/** Which recorded layer may stand in for the outgoing card of a sideways swipe (ui/IslandCardHost.kt). */
+/**
+ * While a card is swiped sideways, one of the two recorded layers may keep showing the card that is leaving.
+ * This picks that layer. See ui/IslandCardHost.kt.
+ */
 object SwipeGhost {
     /**
-     * Layer to park for the card [from] being swiped away, or -1 when no layer holds it (a plain cut beats showing
-     * the wrong card).
+     * @param last the layer drawn last (0 or 1)
+     * @param keys the card key each layer holds
+     * @param from the key of the card that is leaving
+     * @return the layer that holds the leaving card, or -1 when none does: a plain cut looks better than the wrong card
      */
     fun layerToPark(last: Int, keys: Array<String?>, from: String?): Int {
-        if (from == null || last !in 0..1) return -1
+        if (from == null) return -1
+        if (last != 0 && last != 1) return -1
+        val other = 1 - last
         return when {
             keys[last] == from -> last
-            // The last frame already showed the new card: the other layer still holds the old one.
-            keys[1 - last] == from -> 1 - last
+            // the last frame already shows the new card, so the old one is still on the other layer
+            keys[other] == from -> other
             else -> -1
         }
     }
