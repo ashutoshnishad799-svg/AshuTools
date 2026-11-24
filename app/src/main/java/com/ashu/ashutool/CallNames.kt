@@ -32,6 +32,7 @@ class CallNameService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         handle(sbn)
+        IslandHub.onNotification(this, sbn)
     }
 
     private fun handle(sbn: StatusBarNotification) {
@@ -58,7 +59,8 @@ object CallNames {
 
     /** Whether the listener has any job right now. */
     fun wanted(ctx: Context): Boolean =
-        (LockStore.bool(ctx, "calls_banner", true) && (Fg.game != null || !LockStore.bool(ctx, "calls_game_only", true)))
+        (LockStore.bool(ctx, "calls_banner", true) && (Fg.game != null || !LockStore.bool(ctx, "calls_game_only", true))) ||
+            IslandCfg.needsListener(ctx)
 
     /** Enables or disables the listener. Safe to call as often as you like, it only acts on a change. */
     fun set(ctx: Context, on: Boolean) {

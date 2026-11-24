@@ -11,8 +11,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("org.jetbrains.kotlin.kapt")
-    id("com.google.dagger.hilt.android")
 }
 
 // Release signing comes from the environment, so no key is ever stored in the repository.
@@ -27,8 +25,8 @@ android {
         applicationId = "com.ashu.ashutool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "3.3.0"
+        versionCode = 9
+        versionName = "4.0.0"
         // SHA-256 of the author's signing certificate. Set it when building the official release, see README.
         // Left empty, the app reports itself as a community build.
         buildConfigField("String", "CERT_SHA256", "\"${System.getenv("CERT_SHA256") ?: ""}\"")
@@ -71,10 +69,8 @@ android {
 }
 
 dependencies {
-    // Dynamic Island: Smart Island by agupta07505, copied into its own module, see smartisland/UPSTREAM.md
-    implementation(project(":smartisland"))
-    implementation("com.google.dagger:hilt-android:2.60.1")
-    kapt("com.google.dagger:hilt-compiler:2.60.1")
+    // The Dynamic Island keeps the touch area of its window as small as the island, through a hidden Android call
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.core:core-ktx:1.18.0")

@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.0.0 - a smaller, smoother Dynamic Island
+- **The APK is much smaller.** The big Dynamic Island that was copied into Ashutool is gone, with everything it needed (about 75,000 lines, nine
+  fonts, Hilt, Shizuku). Ashutool has its own small island now, about 1,500 lines.
+- **Smooth like Smart Island.** The window never changes size and only the area of the island can be touched (the touchable region of the window),
+  so nothing is resized while it moves. The shape grows from one spring value in the layout step, the card has its full size from the first
+  frame and is uncovered as the shape grows, the corners and the fades are read at draw time. The open card goes nearly edge to edge.
+- **A light colourful edge** on the black shape: Off, Accent, Aurora, Rainbow, Flow, with a strength slider. Three kinds of motion: Bouncy, Smooth, Snappy.
+- Shows calls, music and video, charging and low battery, a running recording, sound mode and notifications. Fewer features than Smart Island, by choice.
+- The Island tab is Ashutool's own page: a live picture of the island, size and place, motion, what it shows, behaviour and a Try it row.
+- The island is drawn by the accessibility service of Ashutool, above the status bar. If the phone does not allow the small touchable area, the
+  window is resized to the island as a fallback.
+- Credit for Smart Island is in the README and in the About page.
+
 ## 3.3.0 - a cleaner Ashutool
 - **Home** was redesigned: one big battery card, three numbers (CPU, RAM, heat), a Boost button and a grid of doors to the main places. The quick
   controls card and the island card are gone from it.

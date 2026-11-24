@@ -255,6 +255,9 @@ class Overlay(private val ctx: Context) : LifecycleOwner, SavedStateRegistryOwne
     /** Why the last attempt to add the window failed, empty if it worked. */
     @Volatile var lastError: String = ""
 
+    /** The root view of the window, or null while nothing is shown. */
+    fun rootView(): View? = view
+
     /** Measured size of the window in pixels. Zero until the first layout has happened. */
     fun size(): Pair<Int, Int> = (view?.width ?: 0) to (view?.height ?: 0)
 
@@ -677,7 +680,7 @@ class GameSidebar(private val ctx: Context) {
         var touches by remember { mutableStateOf(false) }
         var net by remember { mutableStateOf(NetMode.known(ctx)) }
         var ringer by remember { mutableIntStateOf(Ringer.mode(ctx)) }
-        var island by remember { mutableStateOf(IslandControl.isOn(ctx)) }
+        var island by remember { mutableStateOf(IslandCfg.on) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 touches = Root.run("settings get system show_touches").firstOrNull()?.trim() == "1"
@@ -783,7 +786,8 @@ class GameSidebar(private val ctx: Context) {
                 }
                 MiniTool(Icons.Outlined.BlurOn, null, "Island", island, Modifier.weight(1f)) {
                     island = !island
-                    io.launch { IslandControl.setEnabled(ctx, island) }
+                    IslandCfg.putBool(ctx, "isl_on", island)
+                    AshuAccessibility.instance?.islandChanged()
                 }
                 Spacer(Modifier.weight(1f))
             }

@@ -146,8 +146,6 @@ object Palette {
         animated = LockStore.bool(ctx, "anim_bg", true)
         realBlur = LockStore.bool(ctx, "glass_blur", false)
         glass = LockStore.int(ctx, "glass_x", 100).coerceIn(60, 160) / 100f
-        // The Dynamic Island screens (Smart Island) are painted with this look too
-        IslandSkin.refresh(ctx)
     }
 }
 
@@ -215,6 +213,5 @@ fun AshuTheme(content: @Composable () -> Unit) {
         primary = Accent, onPrimary = Color.White, secondary = Accent2, background = Color.Transparent, onBackground = TextHi,
         surface = DialogBg, onSurface = TextHi, surfaceVariant = Surf2, onSurfaceVariant = TextLo, error = Danger, outline = Line
     )
-    SideEffect { IslandSkin.push() }
     MaterialTheme(colorScheme = scheme, content = content)
 }

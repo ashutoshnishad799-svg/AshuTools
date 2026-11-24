@@ -75,6 +75,7 @@ class AshuAccessibility : AccessibilityService() {
         connected = true
         instance = this
         Palette.load(this)
+        island = IslandHost(this).also { it.start() }
         ContextCompat.registerReceiver(this, screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
@@ -357,7 +358,23 @@ class AshuAccessibility : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    /** The Dynamic Island. It draws its window through this service. */
+    private var island: IslandHost? = null
+
+    /** Size, place or scale of the island changed: its window is made again. */
+    fun islandChanged() { island?.relayout() }
+
+    /** A switch of the island changed. */
+    fun islandRefresh() { island?.refresh(); island?.startMedia() }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        island?.relayout()
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
+        island?.stop()
+        island = null
         connected = false
         instance = null
         disarmReelTick()

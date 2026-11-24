@@ -7,7 +7,6 @@
  * Keep this header and the author credit in every copy and modified version.
  */
 
-
 package com.ashu.ashutool
 
 import androidx.compose.foundation.layout.Arrangement
@@ -32,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Credit for Smart Island, whose code is the Dynamic Island of Ashutool. Kept apart from [Credits], which holds the
+ * Credit for Smart Island, which gave the idea of the Dynamic Island of Ashutool. Kept apart from [Credits], which holds the
  * author credit of Ashutool itself and is checked by the build.
  */
 object IslandCredits {
@@ -44,7 +43,7 @@ object IslandCredits {
     const val TELEGRAM_URL = "https://telegram.me/SmartIslandApp"
 }
 
-/** The credit card of the Island tab and the About page. */
+/** The credit card of the About page. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IslandCreditCard() {
@@ -60,9 +59,8 @@ fun IslandCreditCard() {
             }
         }
         Text(
-            "The Dynamic Island is built on ${IslandCredits.NAME} by ${IslandCredits.AUTHOR} (${IslandCredits.HANDLE}), shared under the " +
-                "${IslandCredits.LICENSE}. Copyright \u00A9 2026 ${IslandCredits.AUTHOR}. It comes with no warranty. You may share it under " +
-                "the same licence, a copy is in the source of Ashutool. Thank you.",
+            "The idea and the design of the Dynamic Island come from ${IslandCredits.NAME} by ${IslandCredits.AUTHOR} (${IslandCredits.HANDLE}), " +
+                "shared under the ${IslandCredits.LICENSE}. The island of Ashutool is written for Ashutool. Thank you.",
             color = TextLo, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp, bottom = 10.dp)
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

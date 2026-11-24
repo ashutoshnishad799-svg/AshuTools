@@ -15,9 +15,10 @@ Bigger tabs have sub pages:
 - Usage: App limits with custom timing, Reels blocker (Instagram Reels, YouTube Shorts: block or daily limit).
 - Lock: PIN or pattern, instant overlay, blur behind, blur in recents, recovery code, gear for settings, protects Ashutool itself.
 - Hide: freeze or hide completely, vault by dial code (works without pressing call) or volume keys, gear for settings.
-- Island: the Dynamic Island, which is Smart Island by Animesh Gupta (agupta07505, GPL v3.0, module `smartisland/`). The tab has a live preview, the status
-  of the service, notification access and overlay, the island power switch, twelve doors that open the matching Smart Island page, and the Ashutool extras
-  (hide the island in games, match its colours to the theme, Ashutool look in its screens). Its screens wear the look of Ashutool. Setup runs through root.
+- Island: the Dynamic Island, written for Ashutool and inspired by Smart Island (see README). A live picture of it, the power switch, the light edge (Off, Accent, Aurora,
+  Rainbow, Flow, with a strength), the motion (Bouncy, Smooth, Snappy), size and place (width, height, distance from the top, left and right, overall size),
+  what it shows (calls, music and video, charging, recording, sound mode, messages) and how it behaves (closes after, always show the black shape, tick on touch,
+  show in games, show in landscape). It is drawn by the accessibility service, which root switches on. Music and messages are read through the notification listener.
 - Sound: the Sound and Volume tiles, the volume panel (Small, Medium, Big, left or right, closes after 2 to 12 seconds), game panel size and optional glass blur.
 - Games: launcher, edge sidebar (long press and drag to any edge, 6 bar designs, colour, size, opacity), game mode,
   screen recording with a draggable timer pill and a notification Stop button. The panel has 5G / 4G, Sound, Volume and Island buttons.

@@ -331,7 +331,6 @@ class MonitorService : Service() {
     }
 
     private fun enterGame(pkg: String) {
-        IslandTwists.onGame(this, true)
         if (LockStore.bool(this, "g_sidebar", true)) sidebar?.showFor(pkg) else sidebar?.hide()
         if (LockStore.bool(this, "g_auto", false) && GameMode.active != pkg) {
             scope?.launch(Dispatchers.IO) { GameMode.start(this@MonitorService, pkg) }
@@ -339,7 +338,6 @@ class MonitorService : Service() {
     }
 
     private fun leaveGame() {
-        IslandTwists.onGame(this, false)
         sidebar?.hide()
         if (GameMode.active != null) handler.postDelayed({
             if (Fg.game == null && GameMode.active != null) scope?.launch(Dispatchers.IO) { GameMode.stop(this@MonitorService) }

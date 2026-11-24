@@ -94,7 +94,5 @@ object Root {
             "cmd notification allow_dnd $pkg"
         )
         if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)
-        // The Dynamic Island (Smart Island) is set up once by itself, so it works without opening any settings
-        IslandControl.firstSetup(ctx)
     }
 }
