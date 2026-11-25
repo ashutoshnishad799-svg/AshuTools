@@ -78,6 +78,26 @@ object Root {
         )
     }
 
+    /**
+     * Switches the accessibility service on and makes sure the system really started it. A service that is in the list
+     * but never started (it crashed once, or the list was written at a bad moment) is taken out and put back. Blocks,
+     * call it off the main thread. Does nothing while a payment app is in front, see [PaymentShield].
+     */
+    fun ensureA11y(ctx: Context): Boolean {
+        if (!LockStore.bool(ctx, "use_a11y", true) || PaymentShield.engaged) return false
+        if (AshuAccessibility.connected) return true
+        // Android 13 and newer block the accessibility service of an app that was not installed from a store
+        ok("appops set ${ctx.packageName} ACCESS_RESTRICTED_SETTINGS allow")
+        setA11y(ctx, true)
+        Thread.sleep(1500)
+        if (AshuAccessibility.connected) return true
+        setA11y(ctx, false)
+        Thread.sleep(400)
+        setA11y(ctx, true)
+        Thread.sleep(1500)
+        return AshuAccessibility.connected
+    }
+
     /** Grants the app what it needs, so the user never opens Settings. */
     fun bootstrap(ctx: Context) {
         val pkg = ctx.packageName
@@ -93,6 +113,6 @@ object Root {
             // lets the Sound tile switch to silent without asking
             "cmd notification allow_dnd $pkg"
         )
-        if (LockStore.bool(ctx, "use_a11y", true)) setA11y(ctx, true)
+        if (LockStore.bool(ctx, "use_a11y", true)) ensureA11y(ctx)
     }
 }

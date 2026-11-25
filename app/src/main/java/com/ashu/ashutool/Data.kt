@@ -64,6 +64,7 @@ object Fg {
         seen.add(0, p)
         while (seen.size > 12) seen.removeAt(seen.size - 1)
         listener?.invoke(p)
+        PaymentShield.onFg(p)
     }
 }
 

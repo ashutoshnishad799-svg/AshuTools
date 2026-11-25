@@ -21,7 +21,6 @@ import android.graphics.Region
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.view.Gravity
 import android.view.View
 import android.view.ViewTreeObserver
@@ -128,14 +127,7 @@ class IslandHost(private val svc: AccessibilityService) {
         val r = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 hidden = i.action == Intent.ACTION_SCREEN_OFF
-                if (hidden) {
-                    overlay.remove()
-                    lp = null
-                    insetsReady = false
-                } else {
-                    // Let the system finish restoring the display/window state first.
-                    handler.postDelayed({ refresh() }, 250L)
-                }
+                if (hidden) { overlay.remove(); lp = null; insetsReady = false } else refresh()
             }
         }
         val f = IntentFilter().apply {
@@ -151,15 +143,7 @@ class IslandHost(private val svc: AccessibilityService) {
     }
 
     private fun allowedNow(): Boolean {
-        // Do not rely on MonitorService's cached screen flag here. The accessibility
-        // service can start before MonitorService (or survive its restart), leaving
-        // Monitor.screenOn stale and preventing the island window from being added.
-        val interactive = try {
-            svc.getSystemService(PowerManager::class.java).isInteractive
-        } catch (_: Exception) {
-            Monitor.screenOn
-        }
-        if (hidden || !interactive || !IslandCfg.on) return false
+        if (hidden || !Monitor.screenOn || !IslandCfg.on) return false
         if (!IslandCfg.games && Fg.game != null) return false
         if (!IslandCfg.landscape && svc.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) return false
         if (!IslandCfg.idle && IslandHub.mainAct() == null) return false

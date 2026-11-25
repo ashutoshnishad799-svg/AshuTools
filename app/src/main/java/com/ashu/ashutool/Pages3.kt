@@ -105,18 +105,16 @@ fun NotifyPage() {
                 Text(body, color = TextLo, fontSize = 13.sp)
             }
         }
+        item { NotificationAllowedCard() }
         item { PrefSwitch("n_on", true, Icons.Outlined.Notifications, GCyan, "Show stats", "Turn off for a quiet notification", bump) }
         item { PrefSwitch("n_cpu", true, Icons.Outlined.Memory, GTeal, "CPU load", "Percent of total CPU time", bump) }
         item { PrefSwitch("n_temp", true, Icons.Outlined.Thermostat, GFire, "CPU temperature", "Hottest CPU sensor", bump) }
         item { PrefSwitch("n_ram", true, Icons.Outlined.DeveloperBoard, GViolet, "RAM use", "Percent of memory in use", bump) }
         item { PrefSwitch("n_batt", true, Icons.Outlined.BatteryChargingFull, GGreen, "Battery", "Level, current and temperature", bump) }
-        item { PrefSwitch("n_drain", true, Icons.Outlined.BatteryAlert, GFire, "Drain rate", "Percent per hour now and over the last 24 hours", bump) }
-        item { PrefSwitch("n_idle", true, Icons.Outlined.Bedtime, GViolet, "Idle drain", "Battery used per hour while the screen is off, and how deep the phone slept", bump) }
-        item { PrefSwitch("n_screen", true, Icons.Outlined.PhoneAndroid, GBlue, "Screen time and charge used", "Screen on and off since you unplugged, and the milliamp hours used", bump) }
-        item { PrefSwitch("n_active", false, Icons.Outlined.LightMode, GFire, "Active drain", "Average current while the screen is on", bump) }
+        item { PrefSwitch("n_drain", true, Icons.Outlined.BatteryAlert, GFire, "Drain rate", "Active drain and idle drain in percent per hour, since you unplugged", bump) }
+        item { PrefSwitch("n_screen", true, Icons.Outlined.PhoneAndroid, GBlue, "Screen time and deep sleep", "Screen on and off, deep sleep and awake, each with its share, and how much of the battery the screen used", bump) }
         item { PrefSwitch("n_remain", true, Icons.Outlined.Timer, GGreen, "Time left", "Time left at the current rate, or time to full while charging", bump) }
         item { PrefSwitch("n_watt", true, Icons.Outlined.Bolt, GTeal, "Power in watts", "Charging or discharging power next to the current", bump) }
-        item { PrefSwitch("n_net", true, Icons.Outlined.NetworkCheck, GBlue, "Network speed", "Download and upload", bump) }
         item { PrefSwitch("n_sleep", false, Icons.Outlined.Bedtime, GViolet, "Deep sleep and uptime", "How much of the time the phone slept", bump) }
         item { PrefSwitch("n_storage", false, Icons.Outlined.SdStorage, GCyan, "Free storage", "Space left on data", bump) }
         item { PrefSwitch("n_freq", true, Icons.Outlined.Speed, GBlue, "Frequency and governor", "Fastest core and active governor", bump) }
@@ -383,5 +381,45 @@ fun DevicePage() {
             },
             onDismiss = { seTarget = null }
         )
+    }
+}
+
+
+/** Says so when the system blocks the notification of Ashutool, and offers the way to allow it. */
+@Composable
+private fun NotificationAllowedCard() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var allowed by remember { mutableStateOf(androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            allowed = androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+            kotlinx.coroutines.delay(1500L)
+        }
+    }
+    if (!allowed) {
+        Glass {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Warning, null, tint = Danger, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Notifications are blocked for Ashutool, so the live notification cannot show in the notification panel.",
+                    color = TextHi, fontSize = 13.sp, modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            GlassButton(Icons.Outlined.Notifications, "Allow notifications") {
+                scope.launch {
+                    withContext(Dispatchers.IO) { Root.ok("pm grant ${ctx.packageName} android.permission.POST_NOTIFICATIONS") }
+                    if (!androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

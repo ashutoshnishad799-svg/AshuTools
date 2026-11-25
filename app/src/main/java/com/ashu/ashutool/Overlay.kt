@@ -715,7 +715,6 @@ class GameSidebar(private val ctx: Context) {
                 Stat("Temp", "${s.cpuTemp.toInt()}\u00B0", Modifier.weight(1f))
                 Stat("RAM", "${s.ramPct.toInt()}%", Modifier.weight(1f))
                 Stat("Batt", "${s.batt.level}%", Modifier.weight(1f))
-                Stat("Down", fmtSpeed(s.netDown), Modifier.weight(1.3f))
             }
             // Performance profile
             Row(

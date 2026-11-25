@@ -692,74 +692,79 @@ private fun batteryExtras(ctx: Context, s: Snap): List<String> {
     return out
 }
 
-/**
- * The numbers of the open live notification as pairs of a name and a value, shown in two columns. At most eight, in the
- * order that matters most: processor, memory, battery, power, drain, network. Empty when the notification has no numbers.
- */
-fun statsGrid(ctx: Context, s: Snap): List<Pair<String, String>> {
-    if (Guard.safe || !LockStore.bool(ctx, "n_on", true)) return emptyList()
-    val out = ArrayList<Pair<String, String>>()
-    val b = s.batt
-    if (LockStore.bool(ctx, "n_cpu", true)) out += "CPU" to "${s.cpu.toInt()}%"
-    if (LockStore.bool(ctx, "n_temp", true)) out += "CPU heat" to "${s.cpuTemp.toInt()}\u00B0C"
-    if (LockStore.bool(ctx, "n_ram", true)) out += "RAM" to "${s.ramPct.toInt()}%"
-    if (LockStore.bool(ctx, "n_batt", true)) {
-        out += "Battery" to "${b.level}%  ${"%.1f".format(b.tempC)}\u00B0C"
-        val watt = if (LockStore.bool(ctx, "n_watt", true) && b.mv > 0) "  ${"%.1f".format(Math.abs(b.ma) * b.mv / 1_000_000f)} W" else ""
-        out += "Power" to "${b.ma} mA$watt"
-    }
-    if (LockStore.bool(ctx, "n_drain", true)) {
-        val r = s.ratePh
-        out += "Drain" to when {
-            r == null -> "measuring"
-            r < 0 -> "-${"%.1f".format(-r)}%/h"
-            else -> "+${"%.1f".format(r)}%/h"
-        }
-    }
-    if (LockStore.bool(ctx, "n_net", true)) {
-        out += "Download" to fmtSpeed(s.netDown)
-        out += "Upload" to fmtSpeed(s.netUp)
-    }
-    if (LockStore.bool(ctx, "n_freq", true)) out += "Core max" to "${(s.cores.maxOfOrNull { it.khz } ?: 0) / 1000} MHz"
-    if (LockStore.bool(ctx, "n_sleep", false)) out += "Deep sleep" to "${s.deepSleep}%"
-    if (LockStore.bool(ctx, "n_storage", false)) out += "Free storage" to "${"%.1f".format(s.freeGb)} GB"
-    return out.take(8)
+/** The time as hours, minutes and seconds, like "15h 44m 12s". */
+private fun hms(ms: Long): String {
+    val t = (ms / 1000L).coerceAtLeast(0L)
+    return "${t / 3600}h ${(t % 3600) / 60}m ${t % 60}s"
 }
 
-/** Title and body for the live notification. Used by the service and by the preview card. */
+private fun pct(part: Long, whole: Long): String = if (whole <= 0L) "0%" else "%.1f%%".format(part * 100.0 / whole)
+
+/**
+ * Title and body for the live notification, in the way of the best kernel managers: one line with the battery, the
+ * temperature and the current, then lines with the drain while the screen is on and off, how long the screen was on and
+ * off since the last charge and how much of the off time the phone slept deeply, then the processor and the memory.
+ * Used by the service and by the preview card. Network speed is not here: it lives in the status bar only.
+ */
 fun statsLines(ctx: Context, s: Snap): Pair<String, String> {
-    val top = mutableListOf<String>()
-    if (LockStore.bool(ctx, "n_cpu", true)) top += "CPU ${s.cpu.toInt()}%"
-    if (LockStore.bool(ctx, "n_temp", true)) top += "${s.cpuTemp.toInt()}\u00B0C"
-    if (LockStore.bool(ctx, "n_ram", true)) top += "RAM ${s.ramPct.toInt()}%"
-    val rows = mutableListOf<String>()
+    if (Guard.safe) return "Ashutool safe mode" to "Auto features are paused. Open Settings to resume."
+    if (!LockStore.bool(ctx, "n_on", true)) return "Ashutool is running" to "Tap to open"
+    val b = s.batt
+    val head = ArrayList<String>()
     if (LockStore.bool(ctx, "n_batt", true)) {
-        val b = s.batt
-        val watt = if (LockStore.bool(ctx, "n_watt", true) && b.mv > 0) "   ${"%.1f".format(Math.abs(b.ma) * b.mv / 1_000_000f)} W" else ""
-        rows += "Battery ${b.level}%   ${b.ma} mA   ${"%.1f".format(b.tempC)}\u00B0C$watt"
+        head += "${b.level}%"
+        head += "${"%.0f".format(b.tempC)}\u00B0C"
+        val watt = if (LockStore.bool(ctx, "n_watt", true) && b.mv > 0) " (${"%.1f".format(Math.abs(b.ma) * b.mv / 1_000_000f)} W)" else ""
+        head += "${if (b.charging) "Charging" else "Discharging"} ${Math.abs(b.ma)} mA$watt"
     }
-    if (LockStore.bool(ctx, "n_drain", true)) {
-        val r = s.ratePh
-        val now = when {
-            r == null -> "measuring"
-            r < 0 -> "-${"%.1f".format(-r)}%/h"
-            else -> "+${"%.1f".format(r)}%/h"
+    val title = if (head.isEmpty()) "Ashutool is running" else head.joinToString(" \u00B7 ")
+    val rows = ArrayList<String>()
+    val v = try { Session.view(ctx) } catch (e: Exception) { null }
+    if (v != null && !v.charging) {
+        // Drain: how much of the battery went while the screen was on and how much while it was off, per hour
+        val drop = (v.startLevel - v.level).coerceAtLeast(0)
+        val onH = v.onMs / 3_600_000f
+        val offH = v.offMs / 3_600_000f
+        val used = v.onMah + v.offMah
+        if (LockStore.bool(ctx, "n_drain", true)) {
+            if (v.hasMah && used > 0f && drop > 0) {
+                val onDrop = drop * v.onMah / used
+                val offDrop = drop - onDrop
+                val active = if (onH >= 0.03f) "%.2f%%/hr".format(onDrop / onH) else "measuring"
+                val idle = if (offH >= 0.03f) "%.2f%%/hr".format(offDrop / offH) else "measuring"
+                rows += "Active drain: $active \u00B7 idle drain: $idle"
+            } else {
+                val r = s.ratePh
+                rows += if (r == null) "Drain: measuring" else "Drain: ${"%.2f".format(Math.abs(r))}%/hr"
+            }
         }
-        rows += "Rate $now   24h used ${"%.0f".format(s.drain24)}% (${"%.1f".format(s.avg24)}%/h)"
+        // The share of the battery that the screen used, since the last charge
+        if (LockStore.bool(ctx, "n_screen", true) && v.hasMah && used > 0f && drop > 0) {
+            val onDrop = drop * v.onMah / used
+            rows += "Screen-on usage: ${"%.1f".format(onDrop)}% of the battery (${"%.0f".format(100f * v.onMah / used)}% of what was used)"
+        }
     }
-    rows += batteryExtras(ctx, s)
-    if (LockStore.bool(ctx, "n_net", true)) rows += "Down ${fmtSpeed(s.netDown)}   Up ${fmtSpeed(s.netUp)}"
-    if (LockStore.bool(ctx, "n_sleep", false)) rows += "Deep sleep ${s.deepSleep}%   Uptime ${Sys.fmtUptime(s.uptimeSec)}"
+    if (v != null && v.totalMs > 0L && LockStore.bool(ctx, "n_screen", true)) {
+        rows += "Screen on: ${hms(v.onMs)} (${pct(v.onMs, v.totalMs)})"
+        rows += "Screen off: ${hms(v.offMs)} (${pct(v.offMs, v.totalMs)})"
+        val asleep = (v.deepMs + v.awakeMs).coerceAtLeast(1L)
+        rows += "Deep sleep: ${hms(v.deepMs)} (${pct(v.deepMs, asleep)})"
+        rows += "Awake: ${hms(v.awakeMs)} (${pct(v.awakeMs, asleep)})"
+    }
+    // How long the battery lasts at this rate
+    val rate = s.ratePh
+    if (LockStore.bool(ctx, "n_remain", true) && rate != null && Math.abs(rate) > 0.05f) {
+        rows += if (rate < 0f) "About ${hoursText(b.level / -rate)} left at this rate"
+        else if (b.level < 100) "About ${hoursText((100 - b.level) / rate)} to full" else "Fully charged"
+    }
+    val live = ArrayList<String>()
+    if (LockStore.bool(ctx, "n_cpu", true)) live += "CPU ${s.cpu.toInt()}%"
+    if (LockStore.bool(ctx, "n_temp", true)) live += "${s.cpuTemp.toInt()}\u00B0C"
+    if (LockStore.bool(ctx, "n_ram", true)) live += "RAM ${s.ramPct.toInt()}%"
+    if (live.isNotEmpty()) rows += live.joinToString(" \u00B7 ")
+    if (LockStore.bool(ctx, "n_freq", true)) rows += "Core max ${(s.cores.maxOfOrNull { it.khz } ?: 0) / 1000} MHz"
     if (LockStore.bool(ctx, "n_storage", false)) rows += "Free storage ${"%.1f".format(s.freeGb)} GB"
-    if (LockStore.bool(ctx, "n_freq", true)) {
-        val mhz = (s.cores.maxOfOrNull { it.khz } ?: 0) / 1000
-        rows += "Core max $mhz MHz   ${s.gov}"
-    }
-    val on = LockStore.bool(ctx, "n_on", true) && !Guard.safe
-    val title = if (Guard.safe) "Ashutool safe mode" else if (on && top.isNotEmpty()) top.joinToString("   ") else "Ashutool is running"
-    val body = if (Guard.safe) "Auto features are paused. Open Settings to resume."
-    else if (on && rows.isNotEmpty()) rows.joinToString("\n") else "Tap to open"
-    return title to body
+    return title to rows.joinToString("\n").ifEmpty { "Tap to open" }
 }
 
 

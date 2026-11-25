@@ -26,6 +26,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -205,6 +207,11 @@ fun IslandRoot(onBounds: (Int, Int, Int, Int) -> Unit) {
     // 0 is the small shape, 1 is the open card. It overshoots a little, which is the bounce.
     val p = animateFloatAsState(if (open) 1f else 0f, feelSpring<Float>(IslandCfg.feel), label = "isl-p")
 
+    // A second thing at the same time is a small bubble beside the island. The island itself stays in the middle.
+    val second = if (IslandCfg.bubble) IslandHub.sideAct() else null
+    val slot = animateFloatAsState(if (second != null && !open) IslandCfg.h * d + 8f else 0f, spring, label = "isl-slot")
+    val rects = remember { Array(2) { IntArray(4) } }
+
     val showCard by remember { derivedStateOf { p.value > 0.02f } }
     val showPill by remember { derivedStateOf { p.value < 0.98f } }
 
@@ -264,10 +271,23 @@ fun IslandRoot(onBounds: (Int, Int, Int, Int) -> Unit) {
         return c.coerceAtMost(minOf(w, h) / 2f).coerceAtLeast(0f)
     }
 
+    /** Tells the host where the touchable area is: the island and the bubble, nothing between or around. */
+    fun report() {
+        var l = Int.MAX_VALUE
+        var t = Int.MAX_VALUE
+        var r = Int.MIN_VALUE
+        var b = Int.MIN_VALUE
+        for (q in rects) {
+            if (q[2] > q[0]) { l = minOf(l, q[0]); t = minOf(t, q[1]); r = maxOf(r, q[2]); b = maxOf(b, q[3]) }
+        }
+        if (r > l) onBounds(l - 10, t - 10, r + 10, b + 10)
+    }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+      Row(Modifier.padding(top = IslandCfg.top.dp)) {
+        Spacer(Modifier.width(slot.value.dp))
         Box(
             Modifier
-                .padding(top = IslandCfg.top.dp)
                 .layout { measurable, _ ->
                     val pr = p.value
                     val wPx = (lerp(cw.value, ew.value, pr) * density.density).roundToInt().coerceAtLeast(2)
@@ -277,7 +297,8 @@ fun IslandRoot(onBounds: (Int, Int, Int, Int) -> Unit) {
                 }
                 .onGloballyPositioned { c ->
                     val b = c.boundsInWindow()
-                    onBounds(b.left.toInt() - 10, b.top.toInt() - 10, b.right.toInt() + 10, b.bottom.toInt() + 10)
+                    rects[0][0] = b.left.toInt(); rects[0][1] = b.top.toInt(); rects[0][2] = b.right.toInt(); rects[0][3] = b.bottom.toInt()
+                    report()
                 }
                 .graphicsLayer {
                     shape = RoundedCornerShape(cornerDp().dp)
@@ -289,9 +310,14 @@ fun IslandRoot(onBounds: (Int, Int, Int, Int) -> Unit) {
                     scaleY = sc
                     transformOrigin = TransformOrigin(0.5f, 0f)
                 }
-                .background(Color.Black)
+                .background(if (IslandCfg.glass) Color(0xBF0E1217) else Color.Black)
                 .drawWithContent {
                     drawContent()
+                    if (IslandCfg.glass) {
+                        // the glass: a light top that fades out and a thin bright rim
+                        drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f), Color.Transparent), endY = size.height * 0.6f))
+                        drawRoundRect(Color.White.copy(alpha = 0.22f), Offset.Zero, size, CornerRadius(cornerDp() * density.density), style = Stroke(1.dp.toPx()))
+                    }
                     val style = IslandCfg.edge
                     val power = IslandCfg.edgePwr
                     if (style != 0 && power > 0) {
@@ -347,6 +373,29 @@ fun IslandRoot(onBounds: (Int, Int, Int, Int) -> Unit) {
                 ) { CardContent(m, d) }
             }
         }
+        Box(Modifier.width(slot.value.dp), contentAlignment = Alignment.TopStart) {
+            if (second != null && slot.value > 2f) {
+                Box(
+                    Modifier
+                        .padding(start = 8.dp)
+                        .size(ch.value.dp)
+                        .onGloballyPositioned { c ->
+                            val b = c.boundsInWindow()
+                            rects[1][0] = b.left.toInt(); rects[1][1] = b.top.toInt(); rects[1][2] = b.right.toInt(); rects[1][3] = b.bottom.toInt()
+                            report()
+                        }
+                        .clip(CircleShape)
+                        .background(if (IslandCfg.glass) Color(0xBF0E1217) else Color.Black)
+                        .border(1.dp, second.accent.copy(alpha = 0.55f), CircleShape)
+                        .pointerInput(second.id) { detectTapGestures(onTap = { tick(); IslandHub.focus(second.id) }) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Lead(second, ch.value.dp * 0.66f)
+                    DisposableEffect(Unit) { onDispose { rects[1].fill(0); report() } }
+                }
+            }
+        }
+      }
     }
 }
 

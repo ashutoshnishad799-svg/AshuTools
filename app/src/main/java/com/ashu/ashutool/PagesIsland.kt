@@ -347,7 +347,10 @@ fun IslandPage() {
         item { ISwitch("isl_notif", true, Icons.Outlined.Notifications, GBlue, "Messages", "A short card for each new notification", changed) }
         item { ISwitch("isl_notif_text", true, Icons.Outlined.Visibility, GViolet, "Show the message text", "Off shows only the name of the app", changed) }
         item { SectionTitle("Behaviour") }
-        item { ISlide("Closes after", "isl_hold", 7, 0, 30, " s", changed) }
+        item { ISlide("Closes after", "isl_hold", 3, 0, 30, " s", changed) }
+        item { ISwitch("isl_bubble", true, Icons.Outlined.BlurOn, GViolet, "Two things at once", "A second thing, like music during a call, shows as a small bubble. Tap it to bring it to the front.", changed) }
+        item { ISwitch("isl_glass", false, Icons.Outlined.Visibility, GCyan, "Glass look", "A see-through dark glass with a light top, instead of plain black", changed) }
+        item { ISwitch("pay_shield", true, Icons.Outlined.Warning, GRed, "Pause for payment apps", "Google Pay, PhonePe and banking apps refuse to work while an accessibility service is on. Ashutool turns its own off while one of them is in front and on again after.", changed) }
         item { ISwitch("isl_idle2", true, Icons.Outlined.PhoneAndroid, GTeal, "Always show the black shape", "Off shows the island only when something happens", changed) }
         item { ISwitch("isl_hapt", true, Icons.Outlined.TouchApp, GBlue, "Tick on touch", "A small vibration when you tap it", changed) }
         item { ISwitch("isl_games", false, Icons.Outlined.SportsEsports, GFire, "Show in games", "Off hides it while a game runs", changed) }

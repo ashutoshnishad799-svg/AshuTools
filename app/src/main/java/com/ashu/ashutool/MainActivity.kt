@@ -62,6 +62,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Palette.load(this)
         applyBars(this)
+        // Without root nobody grants this for us: on Android 13 and newer the live notification needs it to show at all
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
+        }
         val alias = intent?.component?.className?.endsWith("GamesAlias") == true
         val modified = Integrity.tampered(this)
         setContent { AshuTheme { Aurora { if (modified) TamperedScreen() else AshuApp(if (alias) P.GAMES else P.HOME) } } }

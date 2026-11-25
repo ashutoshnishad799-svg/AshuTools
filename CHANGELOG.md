@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.1.0 - banking apps, a notification like the best kernel managers, a busier island
+- **Google Pay and banking apps work again.** They refuse to run while any accessibility service is on. Ashutool now switches its own
+  accessibility service off through root while Google Pay, PhonePe, Paytm, BHIM or a banking app is in front, and on again when you leave
+  (switch: Island > Pause for payment apps). Other apps with an accessibility service, like MT Manager, still have to be switched off by hand.
+- **The island starts by itself.** Root now makes sure the accessibility service really runs: it is switched on at start, and if the system
+  lists it but never starts it, it is taken out and put back. The monitor checks once a minute and starts it again if the system dropped it.
+- **A new live notification**, in the way of Franco Kernel Manager and Battery Guru: one line with the battery, the temperature and the current,
+  then the drain while the screen is on and off in percent per hour, the screen on and off time with their share, deep sleep and awake, how much of the
+  battery the screen used, the time left, and the processor and the memory. Plain text like theirs, so it shows on every ROM. Network speed is gone from it.
+- **Notifications blocked?** The notification page says so and offers to allow them. Phones without root are asked for the permission at the first start.
+- **Game mode** no longer shows the network speed. The speed in the status bar stays.
+- **Island:** a card closes after 3 seconds by default (it was 7), and so do messages. A **glass look** (optional). **Two things at once**: a second thing,
+  like music during a call, shows as a small bubble beside the island, tap it to bring it to the front.
+- The island tab has switches for all of this.
+
 ## 4.0.0 - a smaller, smoother Dynamic Island
 - **The APK is much smaller.** The big Dynamic Island that was copied into Ashutool is gone, with everything it needed (about 75,000 lines, nine
   fonts, Hilt, Shizuku). Ashutool has its own small island now, about 1,500 lines.

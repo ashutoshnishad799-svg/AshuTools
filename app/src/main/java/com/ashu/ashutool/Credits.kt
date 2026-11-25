@@ -171,6 +171,7 @@ class AshuApp : Application() {
         super.onCreate()
         CrashLog.install(this)
         Palette.load(this)
+        PaymentShield.init(this)
     }
 
     /** When the app is no longer on screen the icon pictures are let go. The service keeps running without them. */

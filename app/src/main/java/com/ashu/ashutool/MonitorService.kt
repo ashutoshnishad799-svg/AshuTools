@@ -26,8 +26,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.telephony.TelephonyManager
 import androidx.compose.runtime.snapshotFlow
-import android.view.View
-import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -163,34 +161,16 @@ class MonitorService : Service() {
     private fun build(s: Snap): Notification {
         val (title, body) = statsLines(this, s)
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val b = NotificationCompat.Builder(this, CHANNEL)
+        return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_bolt)
             .setContentTitle(title)
             .setContentText(body.substringBefore('\n'))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(open)
             .setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-        val cells = statsGrid(this, s)
-        if (cells.isEmpty()) {
-            b.setStyle(NotificationCompat.BigTextStyle().bigText(body))
-        } else {
-            // Opened up: two clean columns instead of lines of text
-            val rv = RemoteViews(packageName, R.layout.notif_grid)
-            val cell = intArrayOf(R.id.c1, R.id.c2, R.id.c3, R.id.c4, R.id.c5, R.id.c6, R.id.c7, R.id.c8)
-            val label = intArrayOf(R.id.l1, R.id.l2, R.id.l3, R.id.l4, R.id.l5, R.id.l6, R.id.l7, R.id.l8)
-            val value = intArrayOf(R.id.v1, R.id.v2, R.id.v3, R.id.v4, R.id.v5, R.id.v6, R.id.v7, R.id.v8)
-            val rows = intArrayOf(R.id.row1, R.id.row2, R.id.row3, R.id.row4)
-            for (i in 0 until 8) {
-                if (i < cells.size) {
-                    rv.setTextViewText(label[i], cells[i].first)
-                    rv.setTextViewText(value[i], cells[i].second)
-                    rv.setViewVisibility(cell[i], View.VISIBLE)
-                } else rv.setViewVisibility(cell[i], View.GONE)
-            }
-            for (r in 0 until 4) rv.setViewVisibility(rows[r], if (r * 2 < cells.size) View.VISIBLE else View.GONE)
-            b.setStyle(NotificationCompat.DecoratedCustomViewStyle()).setCustomBigContentView(rv)
-        }
-        return b.build()
+            .build()
     }
 
     /** At most one update every five seconds, and once a minute while the screen is off. */
@@ -470,16 +450,25 @@ class MonitorService : Service() {
      * Accessibility off: usage access is read every 1.5 s, and root is used if usage access is missing too.
      * Accessibility on: only a light backup that catches a game window the accessibility service did not report.
      */
+    private var lastEnsure = 0L
+
     private suspend fun poller() {
         while (currentCoroutineContext().isActive) {
             val a11y = AshuAccessibility.connected
-            val need = LockStore.locked(this).isNotEmpty() || games.isNotEmpty() || Limits.all(this).isNotEmpty()
+            // The accessibility service is meant to be on. If the system dropped it, start it again, once a minute at most.
+            if (Monitor.screenOn && !a11y && !PaymentShield.engaged && LockStore.bool(this, "use_a11y", true) &&
+                System.currentTimeMillis() - lastEnsure > 60_000L
+            ) {
+                lastEnsure = System.currentTimeMillis()
+                withContext(Dispatchers.IO) { if (Root.isGranted()) Root.ensureA11y(this@MonitorService) }
+            }
+            val need = LockStore.locked(this).isNotEmpty() || games.isNotEmpty() || Limits.all(this).isNotEmpty() || PaymentShield.engaged
             if (Monitor.screenOn && need && !a11y) {
                 val fg = withContext(Dispatchers.IO) {
                     Usage.foreground(this@MonitorService) ?: if (!Usage.hasAccess(this@MonitorService)) Usage.topByRoot() else null
                 }
                 if (fg != null && !skipFg(fg)) { Fg.set(fg); pollLock(fg) }
-                delay(1500)
+                delay(if (PaymentShield.engaged) 700 else 1500)
             } else if (Monitor.screenOn && a11y && games.isNotEmpty() && Fg.game == null) {
                 val fg = withContext(Dispatchers.IO) { Usage.foreground(this@MonitorService) }
                 if (fg != null && fg in games) Fg.set(fg)

@@ -96,9 +96,13 @@ object IslandCfg {
     /** The light edge: 0 off, 1 accent, 2 aurora, 3 rainbow, 4 flow. */
     var edge by mutableIntStateOf(2)
     var edgePwr by mutableIntStateOf(55)
-    var hold by mutableIntStateOf(7)
+    var hold by mutableIntStateOf(3)
     var flashSec by mutableIntStateOf(3)
     var hapt by mutableStateOf(true)
+    /** A see-through look: a dark glass with a light top, instead of plain black. */
+    var glass by mutableStateOf(false)
+    /** A second thing at the same time is shown as a small round bubble beside the island. */
+    var bubble by mutableStateOf(true)
     var call by mutableStateOf(true)
     var media by mutableStateOf(true)
     var charge by mutableStateOf(true)
@@ -120,9 +124,11 @@ object IslandCfg {
         feel = LockStore.int(c, "isl_feel", 0).coerceIn(0, 2)
         edge = LockStore.int(c, "isl_edge", 2).coerceIn(0, 4)
         edgePwr = LockStore.int(c, "isl_edge_pwr", 55).coerceIn(0, 100)
-        hold = LockStore.int(c, "isl_hold", 7).coerceIn(0, 30)
+        hold = LockStore.int(c, "isl_hold", 3).coerceIn(0, 30)
         flashSec = LockStore.int(c, "isl_flash", 3).coerceIn(1, 10)
         hapt = LockStore.bool(c, "isl_hapt", true)
+        glass = LockStore.bool(c, "isl_glass", false)
+        bubble = LockStore.bool(c, "isl_bubble", true)
         call = LockStore.bool(c, "isl_call", true)
         media = LockStore.bool(c, "isl_media", true)
         charge = LockStore.bool(c, "isl_charge", true)
@@ -213,6 +219,12 @@ object IslandHub {
     private fun now() = SystemClock.elapsedRealtime()
 
     fun mainAct(): IAct? = acts.firstOrNull { it.id == focusId } ?: acts.firstOrNull()
+
+    /** The second thing going on, shown as the small bubble. */
+    fun sideAct(): IAct? { val m = mainAct(); return acts.firstOrNull { it.id != m?.id } }
+
+    /** The bubble was tapped: it takes the front and the old one becomes the bubble. */
+    fun focus(id: String) { main.post { if (acts.any { it.id == id }) { focusId = id; touch++ } } }
 
     fun upsert(a: IAct) {
         main.post {
@@ -326,7 +338,7 @@ object IslandHub {
                     "n:$pkg", IKind.NOTE, 55,
                     if (showText) title.ifEmpty { label } else label,
                     if (showText) text else "New notification",
-                    null, "", pkg, Color(0xFF60A5FA), now() + 6000L, onOpen = openWith(ctx, n.contentIntent, pkg)
+                    null, "", pkg, Color(0xFF60A5FA), now() + IslandCfg.flashSec * 1000L, onOpen = openWith(ctx, n.contentIntent, pkg)
                 )
             )
         } catch (_: Exception) {}
